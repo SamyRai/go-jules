@@ -20,6 +20,17 @@ go get github.com/SamyRai/go-jules@latest
 
 `go-jules` currently requires Go 1.25 or newer. CI verifies Go 1.25 and Go 1.26.
 
+## Documentation
+
+- [API guide](docs/api.md): client construction, service methods, resource
+  names, activities, artifacts, monitoring, retries, and errors.
+- [Development guide](docs/development.md): repository structure, ownership
+  boundaries, verification commands, and API coverage checks.
+- [Release notes and process](docs/releases.md): compatibility policy,
+  unreleased changes, and tagging workflow.
+- [Security policy](SECURITY.md): vulnerability reporting and runtime security
+  considerations.
+
 ## Quick Start
 
 ```go
@@ -200,78 +211,9 @@ Versioning follows Go module conventions:
 
 The next planned release is `v0.2.0`.
 
-## Release Notes
-
-### Unreleased
-
-- Introduce an opaque client facade with service accessors:
-  `client.Sessions()`, `client.Sources()`, `client.Activities()`, and
-  `client.Artifacts()`.
-- Move DTOs, resource-name handling, HTTP transport/retry behavior, and service
-  implementations behind internal ownership packages while keeping
-  `github.com/SamyRai/go-jules` as the only public import path.
-- Keep `go 1.25.0` as the minimum module version while testing Go 1.25 and Go
-  1.26 in CI.
-- Verify releases with Go 1.26.3.
-- Send the documented activity `createTime` cursor query when
-  `ListActivitiesOptions.CreateTime` is set, while keeping defensive
-  client-side filtering.
-- Add archive/unarchive session support and discovery-based API coverage
-  validation.
-- Harden retry, pagination, resource escaping, and option-default coverage.
-
-## Development
-
-```bash
-gofmt -s -l .
-go mod tidy
-go test ./...
-go test -race ./...
-go vet ./...
-go run ./internal/cmd/jules-api-coverage
-GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-```
-
-## Release Process
-
-Releases are Go module releases. The package is published by pushing an
-immutable semver git tag such as `v0.2.0`; consumers install it with:
-
-```bash
-go get github.com/SamyRai/go-jules@v0.2.0
-```
-
-Before tagging:
-
-```bash
-go mod tidy
-go test ./...
-go test -race ./...
-go vet ./...
-go run ./internal/cmd/jules-api-coverage
-GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-```
-
-Tag and publish from a clean main branch:
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-The release workflow verifies formatting, module tidiness, tests, race tests,
-`go vet`, `govulncheck`, Jules API coverage, and the module path. It then
-creates a GitHub Release with generated notes and asks `proxy.golang.org` to
-index the tag.
-
-This SDK does not publish to GitHub Packages and does not build release assets:
-Go modules are resolved from git tags through the Go module proxy. If a future
-release adds CLI binaries or archives, attach them to the GitHub Release with
-checksums, for example:
-
-```bash
-gh release upload vX.Y.Z dist/* checksums.txt --clobber
-```
+See [release notes and process](docs/releases.md) for unreleased changes and
+the release checklist. See [development guide](docs/development.md) for local
+verification commands.
 
 ## License
 
