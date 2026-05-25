@@ -43,19 +43,16 @@ func (suite *ClientTestSuite) TearDownTest() {
 // TestNewClient tests client creation
 func (suite *ClientTestSuite) TestNewClient() {
 	client := NewClient("api-key", WithBaseURL("https://api.example.com"), WithTimeout(10*time.Second), WithRetryAttempts(2))
+	config := client.Config()
 
-	assert.Equal(suite.T(), "api-key", client.APIKey)
-	assert.Equal(suite.T(), "https://api.example.com", client.BaseURL)
-	assert.Equal(suite.T(), 2, client.RetryAttempts)
-	assert.NotNil(suite.T(), client.HTTPClient)
-	assert.NotNil(suite.T(), client.Sessions)
-	assert.NotNil(suite.T(), client.Sources)
-	assert.NotNil(suite.T(), client.Activities)
-	assert.NotNil(suite.T(), client.Artifacts)
-	assert.Same(suite.T(), client.transport, client.Sessions.transport)
-	assert.Same(suite.T(), client.transport, client.Sources.transport)
-	assert.Same(suite.T(), client.transport, client.Activities.transport)
-	assert.Same(suite.T(), client.Activities, client.Artifacts.activities)
+	assert.Equal(suite.T(), "api-key", config.APIKey)
+	assert.Equal(suite.T(), "https://api.example.com", config.BaseURL)
+	assert.Equal(suite.T(), 2, config.RetryAttempts)
+	assert.NotNil(suite.T(), config.HTTPClient)
+	assert.NotNil(suite.T(), client.Sessions())
+	assert.NotNil(suite.T(), client.Sources())
+	assert.NotNil(suite.T(), client.Activities())
+	assert.NotNil(suite.T(), client.Artifacts())
 }
 
 func (suite *ClientTestSuite) TestNewClientNormalizesDefaults() {
@@ -70,12 +67,13 @@ func (suite *ClientTestSuite) TestNewClientNormalizesDefaults() {
 		WithSleep(nil),
 	)
 
-	assert.Equal(suite.T(), "https://api.example.com", client.BaseURL)
-	assert.NotNil(suite.T(), client.HTTPClient)
-	assert.Equal(suite.T(), 0, client.RetryAttempts)
-	assert.Equal(suite.T(), time.Second, client.RetryBackoff)
-	assert.Equal(suite.T(), defaultUserAgent, client.UserAgent)
-	assert.NotNil(suite.T(), client.Config().Sleep)
+	config := client.Config()
+	assert.Equal(suite.T(), "https://api.example.com", config.BaseURL)
+	assert.NotNil(suite.T(), config.HTTPClient)
+	assert.Equal(suite.T(), 0, config.RetryAttempts)
+	assert.Equal(suite.T(), time.Second, config.RetryBackoff)
+	assert.Equal(suite.T(), defaultUserAgent, config.UserAgent)
+	assert.NotNil(suite.T(), config.Sleep)
 }
 
 // TestListSessions tests listing sessions
@@ -97,7 +95,7 @@ func (suite *ClientTestSuite) TestListSessions() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Sessions.List(context.Background(), &ListSessionsOptions{PageSize: 10})
+	response, err := suite.client.Sessions().List(context.Background(), &ListSessionsOptions{PageSize: 10})
 
 	require.NoError(suite.T(), err)
 	sessions := response.Sessions
@@ -125,7 +123,7 @@ func (suite *ClientTestSuite) TestListSessionsWithPagination() {
 			return resp, nil
 		})
 
-	sessions, err := suite.client.Sessions.List(context.Background(), &ListSessionsOptions{
+	sessions, err := suite.client.Sessions().List(context.Background(), &ListSessionsOptions{
 		PageSize:  5,
 		PageToken: "test-token",
 	})
@@ -152,7 +150,7 @@ func (suite *ClientTestSuite) TestListSessionsWithOptionsFilter() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Sessions.List(context.Background(), &ListSessionsOptions{
+	response, err := suite.client.Sessions().List(context.Background(), &ListSessionsOptions{
 		PageSize: 10,
 		Filter:   "archived = true",
 	})
@@ -180,7 +178,7 @@ func (suite *ClientTestSuite) TestGetSession() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Get(context.Background(), "session-1")
+	session, err := suite.client.Sessions().Get(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "session-1", session.ID)
@@ -218,7 +216,7 @@ func (suite *ClientTestSuite) TestCreateSession() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Create(context.Background(), &request)
+	session, err := suite.client.Sessions().Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "new-session-1", session.ID)
@@ -265,7 +263,7 @@ func (suite *ClientTestSuite) TestCreateSessionWithSource() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Create(context.Background(), &request)
+	session, err := suite.client.Sessions().Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "new-session-1", session.ID)
@@ -287,7 +285,7 @@ func (suite *ClientTestSuite) TestCreateSessionWithSourceRequiresStartingBranchM
 			return resp, nil
 		})
 
-	_, err := suite.client.Sessions.Create(context.Background(), &request)
+	_, err := suite.client.Sessions().Create(context.Background(), &request)
 
 	require.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "starting branch is required")
@@ -313,7 +311,7 @@ func (suite *ClientTestSuite) TestCreateSessionHydratesPartialCreateResponse() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Create(context.Background(), &request)
+	session, err := suite.client.Sessions().Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), SessionStateAwaitingPlanApproval, session.State)
@@ -336,7 +334,7 @@ func (suite *ClientTestSuite) TestSendMessage() {
 			return httpmock.NewStringResponse(200, ""), nil
 		})
 
-	err := suite.client.Sessions.SendMessage(context.Background(), "session-1", &request)
+	err := suite.client.Sessions().SendMessage(context.Background(), "session-1", &request)
 
 	require.NoError(suite.T(), err)
 }
@@ -348,7 +346,7 @@ func (suite *ClientTestSuite) TestApprovePlan() {
 			return httpmock.NewStringResponse(200, ""), nil
 		})
 
-	err := suite.client.Sessions.ApprovePlan(context.Background(), "session-1")
+	err := suite.client.Sessions().ApprovePlan(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 }
@@ -360,7 +358,7 @@ func (suite *ClientTestSuite) TestDeleteSession() {
 			return httpmock.NewStringResponse(200, ""), nil
 		})
 
-	err := suite.client.Sessions.Delete(context.Background(), "session-1")
+	err := suite.client.Sessions().Delete(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 }
@@ -375,7 +373,7 @@ func (suite *ClientTestSuite) TestArchiveSession() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Archive(context.Background(), "session 1")
+	session, err := suite.client.Sessions().Archive(context.Background(), "session 1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "session 1", session.ID)
@@ -392,7 +390,7 @@ func (suite *ClientTestSuite) TestUnarchiveSession() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Unarchive(context.Background(), "sessions/session 1")
+	session, err := suite.client.Sessions().Unarchive(context.Background(), "sessions/session 1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "session 1", session.ID)
@@ -420,7 +418,7 @@ func (suite *ClientTestSuite) TestRequestBodyReplayedOnRetry() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Create(context.Background(), &request)
+	session, err := suite.client.Sessions().Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "new-session-1", session.ID)
@@ -456,7 +454,7 @@ func (suite *ClientTestSuite) TestListActivities() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{PageSize: 10})
+	response, err := suite.client.Activities().List(context.Background(), "session-1", &ListActivitiesOptions{PageSize: 10})
 
 	require.NoError(suite.T(), err)
 	activities := response.Activities
@@ -480,7 +478,7 @@ func (suite *ClientTestSuite) TestGetActivity() {
 			return resp, nil
 		})
 
-	activity, err := suite.client.Activities.Get(context.Background(), "session-1", "activity-1")
+	activity, err := suite.client.Activities().Get(context.Background(), "session-1", "activity-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "activity-1", activity.ID)
@@ -509,7 +507,7 @@ func (suite *ClientTestSuite) TestListSources() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Sources.List(context.Background(), &ListSourcesOptions{PageSize: 10})
+	response, err := suite.client.Sources().List(context.Background(), &ListSourcesOptions{PageSize: 10})
 
 	require.NoError(suite.T(), err)
 	sources := response.Sources
@@ -535,7 +533,7 @@ func (suite *ClientTestSuite) TestListAllSessionsPaginates() {
 			return resp, nil
 		})
 
-	sessions, err := suite.client.Sessions.ListAll(context.Background(), 2, "")
+	sessions, err := suite.client.Sessions().ListAll(context.Background(), 2, "")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), []Session{{ID: "session-1"}, {ID: "session-2"}}, sessions)
@@ -558,7 +556,7 @@ func (suite *ClientTestSuite) TestListAllSessionsFilteredPaginates() {
 			return resp, nil
 		})
 
-	sessions, err := suite.client.Sessions.ListAll(context.Background(), 2, "archived = true")
+	sessions, err := suite.client.Sessions().ListAll(context.Background(), 2, "archived = true")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), []Session{{ID: "session-1", Archived: true}, {ID: "session-2", Archived: true}}, sessions)
@@ -581,7 +579,7 @@ func (suite *ClientTestSuite) TestListAllSourcesPaginates() {
 			return resp, nil
 		})
 
-	sources, err := suite.client.Sources.ListAll(context.Background(), 2, "")
+	sources, err := suite.client.Sources().ListAll(context.Background(), 2, "")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), []Source{{ID: "github/owner/repo-1"}, {ID: "github/owner/repo-2"}}, sources)
@@ -604,7 +602,7 @@ func (suite *ClientTestSuite) TestGetSource() {
 			return resp, nil
 		})
 
-	source, err := suite.client.Sources.Get(context.Background(), "source-1")
+	source, err := suite.client.Sources().Get(context.Background(), "source-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "source-1", source.ID)
@@ -618,7 +616,7 @@ func (suite *ClientTestSuite) TestErrorHandling() {
 			return httpmock.NewStringResponse(404, `{"error": "Session not found"}`), nil
 		})
 
-	_, err := suite.client.Sessions.Get(context.Background(), "session-1")
+	_, err := suite.client.Sessions().Get(context.Background(), "session-1")
 
 	require.Error(suite.T(), err)
 	var apiErr *APIError
@@ -640,7 +638,7 @@ func (suite *ClientTestSuite) TestRetryLogic() {
 			return resp, nil
 		})
 
-	session, err := suite.client.Sessions.Get(context.Background(), "session-1")
+	session, err := suite.client.Sessions().Get(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "session-1", session.ID)
@@ -661,7 +659,7 @@ func (suite *ClientTestSuite) TestContextCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	_, err := suite.client.Sessions.Get(ctx, "session-1")
+	_, err := suite.client.Sessions().Get(ctx, "session-1")
 
 	require.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "context")

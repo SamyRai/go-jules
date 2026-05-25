@@ -34,26 +34,26 @@ func TestResourceNameHandling(t *testing.T) {
 			return httpmock.NewJsonResponse(http.StatusOK, Activity{ID: "act1"})
 		})
 
-	session, err := client.Sessions.Get(context.Background(), "sessions/123")
+	session, err := client.Sessions().Get(context.Background(), "sessions/123")
 	require.NoError(t, err)
 	assert.Equal(t, "123", session.ID)
 
-	source, err := client.Sources.Get(context.Background(), "sources/github/owner/repo")
+	source, err := client.Sources().Get(context.Background(), "sources/github/owner/repo")
 	require.NoError(t, err)
 	assert.Equal(t, "github/owner/repo", source.ID)
 
-	source, err = client.Sources.Get(context.Background(), "sources/github/owner name/repo name")
+	source, err = client.Sources().Get(context.Background(), "sources/github/owner name/repo name")
 	require.NoError(t, err)
 	assert.Equal(t, "github/owner name/repo name", source.ID)
 
-	activity, err := client.Activities.Get(context.Background(), "ignored", "sessions/123/activities/act1")
+	activity, err := client.Activities().Get(context.Background(), "ignored", "sessions/123/activities/act1")
 	require.NoError(t, err)
 	assert.Equal(t, "act1", activity.ID)
 
-	_, err = client.Sessions.Get(context.Background(), "sessions/a/b")
+	_, err = client.Sessions().Get(context.Background(), "sessions/a/b")
 	require.Error(t, err)
 
-	_, err = client.Sources.Get(context.Background(), "sources/github//repo")
+	_, err = client.Sources().Get(context.Background(), "sources/github//repo")
 	require.Error(t, err)
 }
 
@@ -84,7 +84,7 @@ func TestRetryAfterAndAPIErrorDetails(t *testing.T) {
 			return httpmock.NewStringResponse(http.StatusForbidden, "permission denied for request"), nil
 		})
 
-	_, err := client.Sessions.Get(context.Background(), "ratelimited")
+	_, err := client.Sessions().Get(context.Background(), "ratelimited")
 	require.Error(t, err)
 	assert.Equal(t, []time.Duration{2 * time.Second}, slept)
 	assert.Equal(t, 2, calls)

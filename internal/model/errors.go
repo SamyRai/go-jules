@@ -1,4 +1,4 @@
-package jules
+package model
 
 import (
 	"fmt"

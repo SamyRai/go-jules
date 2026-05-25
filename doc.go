@@ -4,10 +4,11 @@
 // sessions, session activities, embedded artifacts, and session monitoring.
 // It is intentionally limited to API client behavior and does not include a
 // CLI, config loader, patch applier, GitHub client, or local filesystem
-// orchestration.
+// orchestration. The public package is a facade over internal model, resource,
+// transport, and service owners.
 //
 // Create a client with NewClient and call focused resource services through
-// Client.Sessions, Client.Sources, Client.Activities, and Client.Artifacts.
+// Client.Sessions(), Client.Sources(), Client.Activities(), and Client.Artifacts().
 // Pagination and official API filters are exposed through ListSessionsOptions,
 // ListSourcesOptions, and ListActivitiesOptions.
 //

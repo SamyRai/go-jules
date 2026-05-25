@@ -1,4 +1,4 @@
-package jules
+package transport
 
 import (
 	"bytes"
@@ -14,16 +14,59 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SamyRai/go-jules/internal/model"
 )
 
 var sensitiveLogValuePattern = regexp.MustCompile(`(?i)((?:api[_-]?key|token|auth|secret|credential)[^=\s]*=)[^&\s"']+`)
 
-type transport struct {
-	client *Client
+// SleepFunc sleeps for the provided duration and may return early with an error.
+type SleepFunc func(time.Duration) error
+
+// Config contains HTTP transport configuration.
+type Config struct {
+	APIKey        string
+	HTTPClient    *http.Client
+	RetryAttempts int
+	RetryBackoff  time.Duration
+	UserAgent     string
+	Sleep         SleepFunc
+	Logger        *slog.Logger
+	DebugLog      bool
 }
 
-// doJSON performs an HTTP request with JSON payload and response handling.
-func (t *transport) doJSON(ctx context.Context, method, url string, body any, result any) error {
+// Transport owns HTTP request execution, retries, errors, and logging.
+type Transport struct {
+	config Config
+}
+
+// New creates a Transport with normalized defaults.
+func New(config Config) *Transport {
+	if config.HTTPClient == nil {
+		config.HTTPClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	if config.RetryAttempts < 0 {
+		config.RetryAttempts = 0
+	}
+	if config.RetryBackoff <= 0 {
+		config.RetryBackoff = time.Second
+	}
+	if config.Sleep == nil {
+		config.Sleep = func(d time.Duration) error {
+			time.Sleep(d)
+			return nil
+		}
+	}
+	return &Transport{config: config}
+}
+
+// Config returns the effective HTTP transport configuration.
+func (t *Transport) Config() Config {
+	return t.config
+}
+
+// DoJSON performs an HTTP request with JSON payload and response handling.
+func (t *Transport) DoJSON(ctx context.Context, method, url string, body any, result any) error {
 	var reqBody io.Reader
 
 	if body != nil {
@@ -42,7 +85,7 @@ func (t *transport) doJSON(ctx context.Context, method, url string, body any, re
 	if body != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
-	c := t.client
+	c := t.config
 	httpReq.Header.Set("X-Goog-Api-Key", c.APIKey)
 	httpReq.Header.Set("Accept", "application/json")
 	if c.UserAgent != "" {
@@ -68,15 +111,15 @@ func (t *transport) doJSON(ctx context.Context, method, url string, body any, re
 }
 
 // do performs an HTTP request with retry logic and error handling.
-func (t *transport) do(req *http.Request) (*http.Response, error) {
-	c := t.client
+func (t *Transport) do(req *http.Request) (*http.Response, error) {
+	c := t.config
 	var resp *http.Response
 	var err error
 
 	for attempt := 0; attempt <= c.RetryAttempts; attempt++ {
 		if attempt > 0 {
 			backoff := retryDelay(resp, c.RetryBackoff, attempt)
-			if err := sleepWithContext(req.Context(), backoff, c.sleep); err != nil {
+			if err := sleepWithContext(req.Context(), backoff, c.Sleep); err != nil {
 				return nil, err
 			}
 		}
@@ -90,7 +133,7 @@ func (t *transport) do(req *http.Request) (*http.Response, error) {
 		resp, err = c.HTTPClient.Do(attemptReq)
 		duration := time.Since(start)
 
-		if c.debugLog && c.logger != nil {
+		if c.DebugLog && c.Logger != nil {
 			statusCode := 0
 			if resp != nil {
 				statusCode = resp.StatusCode
@@ -110,7 +153,7 @@ func (t *transport) do(req *http.Request) (*http.Response, error) {
 				args = append(args, slog.String("error", redactSensitiveLogValue(err.Error())))
 			}
 
-			c.logger.DebugContext(req.Context(), "Jules API request", args...)
+			c.Logger.DebugContext(req.Context(), "Jules API request", args...)
 		}
 
 		// Success case (2xx status codes)
@@ -163,7 +206,7 @@ func (t *transport) do(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		return nil, &APIError{
+		return nil, &model.APIError{
 			Method:     req.Method,
 			Path:       req.URL.EscapedPath(),
 			StatusCode: resp.StatusCode,

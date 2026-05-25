@@ -1,16 +1,18 @@
-package jules
+package services
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/SamyRai/go-jules/internal/model"
 )
 
 // SessionStatus represents the current status of a session
 type SessionStatus struct {
-	Session         *Session
-	State           SessionState
+	Session         *model.Session
+	State           model.SessionState
 	IsActive        bool
 	IsDone          bool
 	IsSuccess       bool
@@ -20,7 +22,8 @@ type SessionStatus struct {
 
 // SessionMonitor provides session monitoring capabilities
 type SessionMonitor struct {
-	client     *Client
+	sessions   SessionGetter
+	activities ActivityLister
 	sessionID  string
 	interval   time.Duration
 	maxWait    time.Duration
@@ -28,13 +31,22 @@ type SessionMonitor struct {
 	onComplete func(*SessionStatus)
 }
 
+type SessionGetter interface {
+	Get(ctx context.Context, sessionID string) (*model.Session, error)
+}
+
+type ActivityLister interface {
+	List(ctx context.Context, sessionID string, options *ListActivitiesOptions) (*model.ActivitiesResponse, error)
+}
+
 // NewSessionMonitor creates a new session monitor
-func NewSessionMonitor(client *Client, sessionID string) *SessionMonitor {
+func NewSessionMonitor(sessions SessionGetter, activities ActivityLister, sessionID string) *SessionMonitor {
 	return &SessionMonitor{
-		client:    client,
-		sessionID: sessionID,
-		interval:  5 * time.Second,  // Check every 5 seconds
-		maxWait:   30 * time.Minute, // Wait up to 30 minutes
+		sessions:   sessions,
+		activities: activities,
+		sessionID:  sessionID,
+		interval:   5 * time.Second,  // Check every 5 seconds
+		maxWait:    30 * time.Minute, // Wait up to 30 minutes
 	}
 }
 
@@ -115,13 +127,13 @@ func (sm *SessionMonitor) pollUntilComplete(ctx context.Context, continuous bool
 
 // getSessionStatus retrieves the current session status
 func (sm *SessionMonitor) getSessionStatus(ctx context.Context) (*SessionStatus, error) {
-	session, err := sm.client.Sessions.Get(ctx, sm.sessionID)
+	session, err := sm.sessions.Get(ctx, sm.sessionID)
 	if err != nil {
 		// Check if it's a not found error (handle wrapped errors)
-		var apiErr *APIError
+		var apiErr *model.APIError
 		if errors.As(err, &apiErr) && apiErr.IsNotFound() {
 			return &SessionStatus{
-				State:     SessionStateFailed,
+				State:     model.SessionStateFailed,
 				IsActive:  false,
 				IsDone:    true,
 				IsSuccess: false,
@@ -133,14 +145,14 @@ func (sm *SessionMonitor) getSessionStatus(ctx context.Context) (*SessionStatus,
 
 	status := &SessionStatus{
 		Session:         session,
-		State:           SessionState(session.State),
+		State:           model.SessionState(session.State),
 		IsActive:        session.State.IsActive(),
 		IsDone:          session.State.IsTerminal(),
 		IsSuccess:       session.State.IsSuccessful(),
 		NeedsUserAction: session.State.NeedsUserAction(),
 	}
 
-	if session.State == SessionStateFailed {
+	if session.State == model.SessionStateFailed {
 		status.Error = "session failed"
 	}
 
@@ -151,7 +163,7 @@ func (sm *SessionMonitor) getSessionStatus(ctx context.Context) (*SessionStatus,
 func (sm *SessionMonitor) WaitForPlan(ctx context.Context) (*SessionStatus, error) {
 	return sm.pollUntilCondition(ctx, func(status *SessionStatus) bool {
 		// Get latest activities to check for plan generation
-		response, err := sm.client.Activities.List(ctx, sm.sessionID, &ListActivitiesOptions{PageSize: 10})
+		response, err := sm.activities.List(ctx, sm.sessionID, &ListActivitiesOptions{PageSize: 10})
 		if err != nil {
 			return false
 		}
