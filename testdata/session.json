@@ -4,11 +4,14 @@
   "prompt": "Add comprehensive unit tests for the authentication module",
   "title": "Add auth tests",
   "state": "AWAITING_PLAN_APPROVAL",
+  "archived": true,
   "url": "https://jules.google.com/session/abc123",
   "createTime": "2024-01-15T10:30:00Z",
   "updateTime": "2024-01-15T11:45:00Z",
   "sourceContext": {
     "source": "sources/github/myorg/myrepo",
+    "workingBranch": "jules/add-auth-tests",
+    "environmentVariablesEnabled": true,
     "githubRepoContext": {
       "startingBranch": "main"
     }
@@ -20,7 +23,19 @@
       "pullRequest": {
         "url": "https://github.com/myorg/myrepo/pull/35",
         "title": "Add auth tests",
-        "description": "Adds authentication module tests."
+        "description": "Adds authentication module tests.",
+        "baseRef": "main",
+        "headRef": "jules/add-auth-tests"
+      }
+    },
+    {
+      "changeSet": {
+        "source": "sources/github/myorg/myrepo",
+        "gitPatch": {
+          "baseCommitId": "a1b2c3d4",
+          "unidiffPatch": "diff --git a/auth_test.go b/auth_test.go\n+package auth\n",
+          "suggestedCommitMessage": "Add authentication tests"
+        }
       }
     }
   ]

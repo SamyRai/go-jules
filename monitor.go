@@ -115,7 +115,7 @@ func (sm *SessionMonitor) pollUntilComplete(ctx context.Context, continuous bool
 
 // getSessionStatus retrieves the current session status
 func (sm *SessionMonitor) getSessionStatus(ctx context.Context) (*SessionStatus, error) {
-	session, err := sm.client.GetSession(ctx, sm.sessionID)
+	session, err := sm.client.Sessions.Get(ctx, sm.sessionID)
 	if err != nil {
 		// Check if it's a not found error (handle wrapped errors)
 		var apiErr *APIError
@@ -151,13 +151,13 @@ func (sm *SessionMonitor) getSessionStatus(ctx context.Context) (*SessionStatus,
 func (sm *SessionMonitor) WaitForPlan(ctx context.Context) (*SessionStatus, error) {
 	return sm.pollUntilCondition(ctx, func(status *SessionStatus) bool {
 		// Get latest activities to check for plan generation
-		activities, err := sm.client.ListActivities(ctx, sm.sessionID, 10)
+		response, err := sm.client.Activities.List(ctx, sm.sessionID, &ListActivitiesOptions{PageSize: 10})
 		if err != nil {
 			return false
 		}
 
 		// Check if any activity has a plan generated
-		for _, activity := range activities {
+		for _, activity := range response.Activities {
 			if activity.PlanGenerated != nil {
 				return true
 			}

@@ -12,6 +12,7 @@ import (
 type ListActivitiesOptions struct {
 	PageSize   int
 	PageToken  string
+	Filter     string
 	CreateTime time.Time
 }
 
@@ -33,38 +34,26 @@ type ActivitySearchOptions struct {
 	Limit  int
 }
 
-// ListActivities lists activities within a session.
-//
-// Deprecated: Use ListActivitiesWithPagination for paginated responses.
-func (c *Client) ListActivities(ctx context.Context, sessionID string, pageSize int) ([]Activity, error) {
-	response, err := c.ListActivitiesWithPagination(ctx, sessionID, pageSize, "")
-	if err != nil {
-		return nil, err
-	}
-	return response.Activities, nil
+// ActivitiesService owns Jules activity operations.
+type ActivitiesService struct {
+	transport *transport
 }
 
-// ListActivitiesWithPagination lists activities within a session with pagination support.
-func (c *Client) ListActivitiesWithPagination(ctx context.Context, sessionID string, pageSize int, pageToken string) (*ActivitiesResponse, error) {
-	return c.ListActivitiesWithOptions(ctx, sessionID, &ListActivitiesOptions{
-		PageSize:  pageSize,
-		PageToken: pageToken,
-	})
-}
-
-// ListActivitiesWithOptions lists activities with pagination. When CreateTime
-// is set, activities are filtered client-side because the Jules API currently
-// rejects createTime as a list query parameter.
-func (c *Client) ListActivitiesWithOptions(ctx context.Context, sessionID string, options *ListActivitiesOptions) (*ActivitiesResponse, error) {
+// List lists activities with pagination. When CreateTime is set, the request
+// includes the documented createTime cursor filter and the response is filtered
+// client-side as a defensive guard.
+func (a *ActivitiesService) List(ctx context.Context, sessionID string, options *ListActivitiesOptions) (*ActivitiesResponse, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("session ID is required")
 	}
 	pageSize := 50
 	pageToken := ""
+	filter := ""
 	createTime := time.Time{}
 	if options != nil {
 		pageSize = options.PageSize
 		pageToken = options.PageToken
+		filter = options.Filter
 		createTime = options.CreateTime
 	}
 	if pageSize <= 0 {
@@ -84,11 +73,17 @@ func (c *Client) ListActivitiesWithOptions(ctx context.Context, sessionID string
 	if pageToken != "" {
 		query.Set("pageToken", pageToken)
 	}
+	if filter != "" {
+		query.Set("filter", filter)
+	}
+	if !createTime.IsZero() {
+		query.Set("createTime", createTime.Format(time.RFC3339Nano))
+	}
 
-	requestURL := fmt.Sprintf("%s/%s/activities?%s", c.BaseURL, resourcePath, query.Encode())
+	requestURL := fmt.Sprintf("%s/%s/activities?%s", a.transport.client.BaseURL, resourcePath, query.Encode())
 
 	var response ActivitiesResponse
-	if err := c.doRequestWithJSON(ctx, "GET", requestURL, nil, &response); err != nil {
+	if err := a.transport.doJSON(ctx, "GET", requestURL, nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to list activities: %w", err)
 	}
 	if !createTime.IsZero() {
@@ -98,12 +93,12 @@ func (c *Client) ListActivitiesWithOptions(ctx context.Context, sessionID string
 	return &response, nil
 }
 
-// ListAllActivities retrieves every activity by following nextPageToken.
-func (c *Client) ListAllActivities(ctx context.Context, sessionID string, pageSize int) ([]Activity, error) {
+// ListAll retrieves every activity by following nextPageToken.
+func (a *ActivitiesService) ListAll(ctx context.Context, sessionID string, pageSize int) ([]Activity, error) {
 	var activities []Activity
 	pageToken := ""
 	for {
-		response, err := c.ListActivitiesWithOptions(ctx, sessionID, &ListActivitiesOptions{
+		response, err := a.List(ctx, sessionID, &ListActivitiesOptions{
 			PageSize:  pageSize,
 			PageToken: pageToken,
 		})
@@ -118,12 +113,12 @@ func (c *Client) ListAllActivities(ctx context.Context, sessionID string, pageSi
 	}
 }
 
-// ListActivitiesSince retrieves activities created at or after the cursor time.
-func (c *Client) ListActivitiesSince(ctx context.Context, sessionID string, cursor time.Time, pageSize int) ([]Activity, error) {
+// ListSince retrieves activities created at or after the cursor time.
+func (a *ActivitiesService) ListSince(ctx context.Context, sessionID string, cursor time.Time, pageSize int) ([]Activity, error) {
 	var activities []Activity
 	pageToken := ""
 	for {
-		response, err := c.ListActivitiesWithOptions(ctx, sessionID, &ListActivitiesOptions{
+		response, err := a.List(ctx, sessionID, &ListActivitiesOptions{
 			PageSize:   pageSize,
 			PageToken:  pageToken,
 			CreateTime: cursor,
@@ -166,8 +161,8 @@ func ActivityCursor(activities []Activity) time.Time {
 	return cursor
 }
 
-// GetActivity retrieves a specific activity by ID or resource name.
-func (c *Client) GetActivity(ctx context.Context, sessionID, activityID string) (*Activity, error) {
+// Get retrieves a specific activity by ID or resource name.
+func (a *ActivitiesService) Get(ctx context.Context, sessionID, activityID string) (*Activity, error) {
 	if activityID == "" {
 		return nil, fmt.Errorf("activity ID is required")
 	}
@@ -176,18 +171,18 @@ func (c *Client) GetActivity(ctx context.Context, sessionID, activityID string) 
 	if err != nil {
 		return nil, err
 	}
-	requestURL := fmt.Sprintf("%s/%s", c.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s", a.transport.client.BaseURL, resourcePath)
 
 	var activity Activity
-	if err := c.doRequestWithJSON(ctx, "GET", requestURL, nil, &activity); err != nil {
+	if err := a.transport.doJSON(ctx, "GET", requestURL, nil, &activity); err != nil {
 		return nil, fmt.Errorf("failed to get activity: %w", err)
 	}
 
 	return &activity, nil
 }
 
-// ListActivitiesFiltered lists activities and applies client-side filters over documented fields.
-func (c *Client) ListActivitiesFiltered(ctx context.Context, sessionID string, filter *ActivityFilter) ([]Activity, error) {
+// Filter lists activities and applies client-side filters over documented fields.
+func (a *ActivitiesService) Filter(ctx context.Context, sessionID string, filter *ActivityFilter) ([]Activity, error) {
 	options := &ListActivitiesOptions{}
 	if filter != nil {
 		options.CreateTime = filter.CreateTime
@@ -196,7 +191,7 @@ func (c *Client) ListActivitiesFiltered(ctx context.Context, sessionID string, f
 		}
 	}
 
-	response, err := c.ListActivitiesWithOptions(ctx, sessionID, options)
+	response, err := a.List(ctx, sessionID, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list filtered activities: %w", err)
 	}
@@ -204,10 +199,10 @@ func (c *Client) ListActivitiesFiltered(ctx context.Context, sessionID string, f
 	return FilterActivities(response.Activities, filter), nil
 }
 
-// SearchActivities searches documented activity payloads client-side. It does
+// Search searches documented activity payloads client-side. It does
 // not call an undocumented search endpoint.
-func (c *Client) SearchActivities(ctx context.Context, sessionID string, options *ActivitySearchOptions) ([]Activity, error) {
-	activities, err := c.ListAllActivities(ctx, sessionID, 100)
+func (a *ActivitiesService) Search(ctx context.Context, sessionID string, options *ActivitySearchOptions) ([]Activity, error) {
+	activities, err := a.ListAll(ctx, sessionID, 100)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list activities for search: %w", err)
 	}
@@ -333,34 +328,4 @@ func activitySearchText(activity Activity) string {
 		}
 	}
 	return strings.Join(parts, " ")
-}
-
-// GetActivitiesByType retrieves activities of a specific type.
-func (c *Client) GetActivitiesByType(ctx context.Context, sessionID, activityType string) ([]Activity, error) {
-	filter := &ActivityFilter{Type: activityType}
-	return c.ListActivitiesFiltered(ctx, sessionID, filter)
-}
-
-// GetActivitiesWithPlans retrieves activities that have generated or approved plans.
-func (c *Client) GetActivitiesWithPlans(ctx context.Context, sessionID string) ([]Activity, error) {
-	hasPlan := true
-	filter := &ActivityFilter{HasPlan: &hasPlan}
-	return c.ListActivitiesFiltered(ctx, sessionID, filter)
-}
-
-// GetActivitiesWithArtifacts retrieves activities that have artifacts.
-func (c *Client) GetActivitiesWithArtifacts(ctx context.Context, sessionID string) ([]Activity, error) {
-	hasArtifacts := true
-	filter := &ActivityFilter{HasArtifacts: &hasArtifacts}
-	return c.ListActivitiesFiltered(ctx, sessionID, filter)
-}
-
-// GetRecentActivities retrieves activities from the last N hours.
-func (c *Client) GetRecentActivities(ctx context.Context, sessionID string, hours int) ([]Activity, error) {
-	if hours <= 0 {
-		return nil, fmt.Errorf("hours must be positive")
-	}
-
-	filter := &ActivityFilter{After: time.Now().Add(-time.Duration(hours) * time.Hour)}
-	return c.ListActivitiesFiltered(ctx, sessionID, filter)
 }

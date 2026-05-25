@@ -25,27 +25,35 @@ func TestResourceNameHandling(t *testing.T) {
 		func(req *http.Request) (*http.Response, error) {
 			return httpmock.NewJsonResponse(http.StatusOK, Source{ID: "github/owner/repo"})
 		})
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sources/github/owner%20name/repo%20name",
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewJsonResponse(http.StatusOK, Source{ID: "github/owner name/repo name"})
+		})
 	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/123/activities/act1",
 		func(req *http.Request) (*http.Response, error) {
 			return httpmock.NewJsonResponse(http.StatusOK, Activity{ID: "act1"})
 		})
 
-	session, err := client.GetSession(context.Background(), "sessions/123")
+	session, err := client.Sessions.Get(context.Background(), "sessions/123")
 	require.NoError(t, err)
 	assert.Equal(t, "123", session.ID)
 
-	source, err := client.GetSource(context.Background(), "sources/github/owner/repo")
+	source, err := client.Sources.Get(context.Background(), "sources/github/owner/repo")
 	require.NoError(t, err)
 	assert.Equal(t, "github/owner/repo", source.ID)
 
-	activity, err := client.GetActivity(context.Background(), "ignored", "sessions/123/activities/act1")
+	source, err = client.Sources.Get(context.Background(), "sources/github/owner name/repo name")
+	require.NoError(t, err)
+	assert.Equal(t, "github/owner name/repo name", source.ID)
+
+	activity, err := client.Activities.Get(context.Background(), "ignored", "sessions/123/activities/act1")
 	require.NoError(t, err)
 	assert.Equal(t, "act1", activity.ID)
 
-	_, err = client.GetSession(context.Background(), "sessions/a/b")
+	_, err = client.Sessions.Get(context.Background(), "sessions/a/b")
 	require.Error(t, err)
 
-	_, err = client.GetSource(context.Background(), "sources/github//repo")
+	_, err = client.Sources.Get(context.Background(), "sources/github//repo")
 	require.Error(t, err)
 }
 
@@ -76,7 +84,7 @@ func TestRetryAfterAndAPIErrorDetails(t *testing.T) {
 			return httpmock.NewStringResponse(http.StatusForbidden, "permission denied for request"), nil
 		})
 
-	_, err := client.GetSession(context.Background(), "ratelimited")
+	_, err := client.Sessions.Get(context.Background(), "ratelimited")
 	require.Error(t, err)
 	assert.Equal(t, []time.Duration{2 * time.Second}, slept)
 	assert.Equal(t, 2, calls)

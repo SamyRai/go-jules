@@ -6,8 +6,21 @@ import (
 	"net/url"
 )
 
-// CreateSession creates a new coding session
-func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (*Session, error) {
+// ListSessionsOptions controls session pagination and filtering.
+type ListSessionsOptions struct {
+	PageSize  int
+	PageToken string
+	Filter    string
+}
+
+// SessionsService owns Jules session operations.
+type SessionsService struct {
+	transport *transport
+	sources   *SourcesService
+}
+
+// Create creates a new coding session.
+func (s *SessionsService) Create(ctx context.Context, req *CreateSessionRequest) (*Session, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request cannot be nil")
 	}
@@ -18,7 +31,7 @@ func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (
 	if req.SourceContext != nil && req.SourceContext.Source != "" {
 		req.SourceContext.Source = NormalizeSourceName(req.SourceContext.Source)
 		if req.SourceContext.GithubRepoContext == nil || req.SourceContext.GithubRepoContext.StartingBranch == "" {
-			branch, err := c.defaultStartingBranch(ctx, req.SourceContext.Source)
+			branch, err := s.defaultStartingBranch(ctx, req.SourceContext.Source)
 			if err != nil {
 				return nil, err
 			}
@@ -26,14 +39,14 @@ func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (
 		}
 	}
 
-	requestURL := fmt.Sprintf("%s/sessions", c.BaseURL)
+	requestURL := fmt.Sprintf("%s/sessions", s.transport.client.BaseURL)
 
 	var session Session
-	if err := c.doRequestWithJSON(ctx, "POST", requestURL, req, &session); err != nil {
+	if err := s.transport.doJSON(ctx, "POST", requestURL, req, &session); err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 	if session.ID != "" && session.State == "" {
-		if hydrated, err := c.GetSession(ctx, session.ID); err == nil {
+		if hydrated, err := s.Get(ctx, session.ID); err == nil {
 			return hydrated, nil
 		}
 	}
@@ -41,8 +54,8 @@ func (c *Client) CreateSession(ctx context.Context, req *CreateSessionRequest) (
 	return &session, nil
 }
 
-// GetSession retrieves a specific session by ID
-func (c *Client) GetSession(ctx context.Context, sessionID string) (*Session, error) {
+// Get retrieves a specific session by ID.
+func (s *SessionsService) Get(ctx context.Context, sessionID string) (*Session, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("session ID is required")
 	}
@@ -51,18 +64,18 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*Session, er
 	if err != nil {
 		return nil, err
 	}
-	requestURL := fmt.Sprintf("%s/%s", c.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s", s.transport.client.BaseURL, resourcePath)
 
 	var session Session
-	if err := c.doRequestWithJSON(ctx, "GET", requestURL, nil, &session); err != nil {
+	if err := s.transport.doJSON(ctx, "GET", requestURL, nil, &session); err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
 	return &session, nil
 }
 
-// DeleteSession deletes a session by ID.
-func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
+// Delete deletes a session by ID.
+func (s *SessionsService) Delete(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("session ID is required")
 	}
@@ -71,26 +84,24 @@ func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	requestURL := fmt.Sprintf("%s/%s", c.BaseURL, resourcePath)
-	if err := c.doRequestWithJSON(ctx, "DELETE", requestURL, nil, nil); err != nil {
+	requestURL := fmt.Sprintf("%s/%s", s.transport.client.BaseURL, resourcePath)
+	if err := s.transport.doJSON(ctx, "DELETE", requestURL, nil, nil); err != nil {
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
 
 	return nil
 }
 
-// ListSessions lists all sessions with pagination support
-// Deprecated: Use ListSessionsWithPagination for full pagination support
-func (c *Client) ListSessions(ctx context.Context, pageSize int) ([]Session, error) {
-	response, err := c.ListSessionsWithPagination(ctx, pageSize, "")
-	if err != nil {
-		return nil, err
+// List lists sessions with pagination and official API filters.
+func (s *SessionsService) List(ctx context.Context, options *ListSessionsOptions) (*SessionsResponse, error) {
+	pageSize := 30
+	pageToken := ""
+	filter := ""
+	if options != nil {
+		pageSize = options.PageSize
+		pageToken = options.PageToken
+		filter = options.Filter
 	}
-	return response.Sessions, nil
-}
-
-// ListSessionsWithPagination lists all sessions with full pagination support
-func (c *Client) ListSessionsWithPagination(ctx context.Context, pageSize int, pageToken string) (*SessionsResponse, error) {
 	if pageSize <= 0 {
 		pageSize = 30 // default page size per API docs
 	}
@@ -103,22 +114,30 @@ func (c *Client) ListSessionsWithPagination(ctx context.Context, pageSize int, p
 	if pageToken != "" {
 		query.Set("pageToken", pageToken)
 	}
-	requestURL := fmt.Sprintf("%s/sessions?%s", c.BaseURL, query.Encode())
+	if filter != "" {
+		query.Set("filter", filter)
+	}
+	requestURL := fmt.Sprintf("%s/sessions?%s", s.transport.client.BaseURL, query.Encode())
 
 	var response SessionsResponse
-	if err := c.doRequestWithJSON(ctx, "GET", requestURL, nil, &response); err != nil {
+	if err := s.transport.doJSON(ctx, "GET", requestURL, nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
 	}
 
 	return &response, nil
 }
 
-// ListAllSessions retrieves every session by following nextPageToken.
-func (c *Client) ListAllSessions(ctx context.Context, pageSize int) ([]Session, error) {
+// ListAll retrieves every session matching the official filter expression by
+// following nextPageToken.
+func (s *SessionsService) ListAll(ctx context.Context, pageSize int, filter string) ([]Session, error) {
 	var sessions []Session
 	pageToken := ""
 	for {
-		response, err := c.ListSessionsWithPagination(ctx, pageSize, pageToken)
+		response, err := s.List(ctx, &ListSessionsOptions{
+			PageSize:  pageSize,
+			PageToken: pageToken,
+			Filter:    filter,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -130,8 +149,48 @@ func (c *Client) ListAllSessions(ctx context.Context, pageSize int) ([]Session, 
 	}
 }
 
-// SendMessage sends a message to Jules within a session
-func (c *Client) SendMessage(ctx context.Context, sessionID string, req *SendMessageRequest) error {
+// Archive archives a session by ID and returns the updated session.
+func (s *SessionsService) Archive(ctx context.Context, sessionID string) (*Session, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session ID is required")
+	}
+
+	resourcePath, err := sessionPath(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	requestURL := fmt.Sprintf("%s/%s:archive", s.transport.client.BaseURL, resourcePath)
+
+	var session Session
+	if err := s.transport.doJSON(ctx, "POST", requestURL, map[string]any{}, &session); err != nil {
+		return nil, fmt.Errorf("failed to archive session: %w", err)
+	}
+
+	return &session, nil
+}
+
+// Unarchive unarchives a session by ID and returns the updated session.
+func (s *SessionsService) Unarchive(ctx context.Context, sessionID string) (*Session, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session ID is required")
+	}
+
+	resourcePath, err := sessionPath(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	requestURL := fmt.Sprintf("%s/%s:unarchive", s.transport.client.BaseURL, resourcePath)
+
+	var session Session
+	if err := s.transport.doJSON(ctx, "POST", requestURL, map[string]any{}, &session); err != nil {
+		return nil, fmt.Errorf("failed to unarchive session: %w", err)
+	}
+
+	return &session, nil
+}
+
+// SendMessage sends a message to Jules within a session.
+func (s *SessionsService) SendMessage(ctx context.Context, sessionID string, req *SendMessageRequest) error {
 	if sessionID == "" {
 		return fmt.Errorf("session ID is required")
 	}
@@ -143,17 +202,17 @@ func (c *Client) SendMessage(ctx context.Context, sessionID string, req *SendMes
 	if err != nil {
 		return err
 	}
-	requestURL := fmt.Sprintf("%s/%s:sendMessage", c.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s:sendMessage", s.transport.client.BaseURL, resourcePath)
 
-	if err := c.doRequestWithJSON(ctx, "POST", requestURL, req, nil); err != nil {
+	if err := s.transport.doJSON(ctx, "POST", requestURL, req, nil); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
 	return nil
 }
 
-// ApprovePlan approves a plan in a session
-func (c *Client) ApprovePlan(ctx context.Context, sessionID string) error {
+// ApprovePlan approves a plan in a session.
+func (s *SessionsService) ApprovePlan(ctx context.Context, sessionID string) error {
 	if sessionID == "" {
 		return fmt.Errorf("session ID is required")
 	}
@@ -162,17 +221,17 @@ func (c *Client) ApprovePlan(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	requestURL := fmt.Sprintf("%s/%s:approvePlan", c.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s:approvePlan", s.transport.client.BaseURL, resourcePath)
 
-	if err := c.doRequestWithJSON(ctx, "POST", requestURL, nil, nil); err != nil {
+	if err := s.transport.doJSON(ctx, "POST", requestURL, nil, nil); err != nil {
 		return fmt.Errorf("failed to approve plan: %w", err)
 	}
 
 	return nil
 }
 
-func (c *Client) defaultStartingBranch(ctx context.Context, sourceName string) (string, error) {
-	source, err := c.GetSource(ctx, sourceName)
+func (s *SessionsService) defaultStartingBranch(ctx context.Context, sourceName string) (string, error) {
+	source, err := s.sources.Get(ctx, sourceName)
 	if err != nil {
 		return "", fmt.Errorf("failed to infer starting branch for %s: %w", sourceName, err)
 	}

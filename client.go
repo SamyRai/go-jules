@@ -37,6 +37,12 @@ type Client struct {
 	sleep         SleepFunc
 	logger        *slog.Logger
 	debugLog      bool
+	transport     *transport
+
+	Sessions   *SessionsService
+	Sources    *SourcesService
+	Activities *ActivitiesService
+	Artifacts  *ArtifactsService
 }
 
 // ClientOption configures a Jules API client.
@@ -66,6 +72,9 @@ func NewClient(apiKey string, options ...ClientOption) *Client {
 		client.BaseURL = defaultBaseURL
 	}
 	client.BaseURL = strings.TrimRight(client.BaseURL, "/")
+	if client.RetryAttempts < 0 {
+		client.RetryAttempts = 0
+	}
 	if client.RetryBackoff <= 0 {
 		client.RetryBackoff = time.Second
 	}
@@ -78,6 +87,11 @@ func NewClient(apiKey string, options ...ClientOption) *Client {
 			return nil
 		}
 	}
+	client.transport = &transport{client: client}
+	client.Sources = &SourcesService{transport: client.transport}
+	client.Sessions = &SessionsService{transport: client.transport, sources: client.Sources}
+	client.Activities = &ActivitiesService{transport: client.transport}
+	client.Artifacts = &ArtifactsService{activities: client.Activities}
 
 	return client
 }

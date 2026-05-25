@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-func ExampleClient_CreateSession() {
+func ExampleSessionsService_Create() {
 	client, cleanup := exampleClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"name":"sessions/1","id":"1","state":"QUEUED","createTime":"2026-01-26T09:00:00Z"}`)
 	}))
 	defer cleanup()
 
-	session, _ := client.CreateSession(context.Background(), &CreateSessionRequest{
+	session, _ := client.Sessions.Create(context.Background(), &CreateSessionRequest{
 		Prompt: "Add tests for authentication",
 		SourceContext: &SourceContext{
 			Source: "github/owner/repo",
@@ -30,7 +30,7 @@ func ExampleClient_CreateSession() {
 	// Output: 1 QUEUED
 }
 
-func ExampleClient_ListActivitiesSince() {
+func ExampleActivitiesService_ListSince() {
 	client, cleanup := exampleClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"activities":[{"name":"sessions/1/activities/a1","id":"a1","originator":"agent","createTime":"2026-01-26T09:01:00Z"}]}`)
@@ -38,7 +38,7 @@ func ExampleClient_ListActivitiesSince() {
 	defer cleanup()
 
 	cursor := time.Date(2026, 1, 26, 9, 0, 0, 0, time.UTC)
-	activities, _ := client.ListActivitiesSince(context.Background(), "sessions/1", cursor, 50)
+	activities, _ := client.Activities.ListSince(context.Background(), "sessions/1", cursor, 50)
 
 	fmt.Println(len(activities), ActivityCursor(activities).Format(time.RFC3339))
 	// Output: 1 2026-01-26T09:01:00Z
