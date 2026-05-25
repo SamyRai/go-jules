@@ -48,6 +48,34 @@ func (suite *ClientTestSuite) TestNewClient() {
 	assert.Equal(suite.T(), "https://api.example.com", client.BaseURL)
 	assert.Equal(suite.T(), 2, client.RetryAttempts)
 	assert.NotNil(suite.T(), client.HTTPClient)
+	assert.NotNil(suite.T(), client.Sessions)
+	assert.NotNil(suite.T(), client.Sources)
+	assert.NotNil(suite.T(), client.Activities)
+	assert.NotNil(suite.T(), client.Artifacts)
+	assert.Same(suite.T(), client.transport, client.Sessions.transport)
+	assert.Same(suite.T(), client.transport, client.Sources.transport)
+	assert.Same(suite.T(), client.transport, client.Activities.transport)
+	assert.Same(suite.T(), client.Activities, client.Artifacts.activities)
+}
+
+func (suite *ClientTestSuite) TestNewClientNormalizesDefaults() {
+	client := NewClient(
+		"api-key",
+		nil,
+		WithBaseURL("https://api.example.com/"),
+		WithHTTPClient(nil),
+		WithRetryAttempts(-2),
+		WithRetryBackoff(0),
+		WithUserAgent(""),
+		WithSleep(nil),
+	)
+
+	assert.Equal(suite.T(), "https://api.example.com", client.BaseURL)
+	assert.NotNil(suite.T(), client.HTTPClient)
+	assert.Equal(suite.T(), 0, client.RetryAttempts)
+	assert.Equal(suite.T(), time.Second, client.RetryBackoff)
+	assert.Equal(suite.T(), defaultUserAgent, client.UserAgent)
+	assert.NotNil(suite.T(), client.Config().Sleep)
 }
 
 // TestListSessions tests listing sessions
@@ -69,9 +97,10 @@ func (suite *ClientTestSuite) TestListSessions() {
 			return resp, nil
 		})
 
-	sessions, err := suite.client.ListSessions(context.Background(), 10)
+	response, err := suite.client.Sessions.List(context.Background(), &ListSessionsOptions{PageSize: 10})
 
 	require.NoError(suite.T(), err)
+	sessions := response.Sessions
 	assert.Len(suite.T(), sessions, 1)
 	assert.Equal(suite.T(), "session-1", sessions[0].ID)
 	assert.Equal(suite.T(), "Test Session", sessions[0].Title)
@@ -96,11 +125,41 @@ func (suite *ClientTestSuite) TestListSessionsWithPagination() {
 			return resp, nil
 		})
 
-	sessions, err := suite.client.ListSessionsWithPagination(context.Background(), 5, "test-token")
+	sessions, err := suite.client.Sessions.List(context.Background(), &ListSessionsOptions{
+		PageSize:  5,
+		PageToken: "test-token",
+	})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), sessions.Sessions, 1)
 	assert.Equal(suite.T(), "next-token", sessions.NextPageToken)
+}
+
+func (suite *ClientTestSuite) TestListSessionsWithOptionsFilter() {
+	mockResponse := SessionsResponse{
+		Sessions: []Session{
+			{
+				ID:       "session-1",
+				Title:    "Archived Session",
+				Archived: true,
+			},
+		},
+	}
+
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions?filter=archived+%3D+true&pageSize=10",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(200, mockResponse)
+			return resp, nil
+		})
+
+	response, err := suite.client.Sessions.List(context.Background(), &ListSessionsOptions{
+		PageSize: 10,
+		Filter:   "archived = true",
+	})
+
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), response.Sessions, 1)
+	assert.True(suite.T(), response.Sessions[0].Archived)
 }
 
 // TestGetSession tests getting a specific session
@@ -121,7 +180,7 @@ func (suite *ClientTestSuite) TestGetSession() {
 			return resp, nil
 		})
 
-	session, err := suite.client.GetSession(context.Background(), "session-1")
+	session, err := suite.client.Sessions.Get(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "session-1", session.ID)
@@ -159,7 +218,7 @@ func (suite *ClientTestSuite) TestCreateSession() {
 			return resp, nil
 		})
 
-	session, err := suite.client.CreateSession(context.Background(), &request)
+	session, err := suite.client.Sessions.Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "new-session-1", session.ID)
@@ -206,10 +265,12 @@ func (suite *ClientTestSuite) TestCreateSessionWithSource() {
 			return resp, nil
 		})
 
-	session, err := suite.client.CreateSession(context.Background(), &request)
+	session, err := suite.client.Sessions.Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "new-session-1", session.ID)
+	assert.Equal(suite.T(), "sources/github/owner/repo", request.SourceContext.Source)
+	assert.Nil(suite.T(), request.SourceContext.GithubRepoContext)
 }
 
 func (suite *ClientTestSuite) TestCreateSessionWithSourceRequiresStartingBranchMetadata() {
@@ -226,7 +287,7 @@ func (suite *ClientTestSuite) TestCreateSessionWithSourceRequiresStartingBranchM
 			return resp, nil
 		})
 
-	_, err := suite.client.CreateSession(context.Background(), &request)
+	_, err := suite.client.Sessions.Create(context.Background(), &request)
 
 	require.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "starting branch is required")
@@ -252,7 +313,7 @@ func (suite *ClientTestSuite) TestCreateSessionHydratesPartialCreateResponse() {
 			return resp, nil
 		})
 
-	session, err := suite.client.CreateSession(context.Background(), &request)
+	session, err := suite.client.Sessions.Create(context.Background(), &request)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), SessionStateAwaitingPlanApproval, session.State)
@@ -275,7 +336,7 @@ func (suite *ClientTestSuite) TestSendMessage() {
 			return httpmock.NewStringResponse(200, ""), nil
 		})
 
-	err := suite.client.SendMessage(context.Background(), "session-1", &request)
+	err := suite.client.Sessions.SendMessage(context.Background(), "session-1", &request)
 
 	require.NoError(suite.T(), err)
 }
@@ -287,7 +348,7 @@ func (suite *ClientTestSuite) TestApprovePlan() {
 			return httpmock.NewStringResponse(200, ""), nil
 		})
 
-	err := suite.client.ApprovePlan(context.Background(), "session-1")
+	err := suite.client.Sessions.ApprovePlan(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 }
@@ -299,9 +360,72 @@ func (suite *ClientTestSuite) TestDeleteSession() {
 			return httpmock.NewStringResponse(200, ""), nil
 		})
 
-	err := suite.client.DeleteSession(context.Background(), "session-1")
+	err := suite.client.Sessions.Delete(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
+}
+
+func (suite *ClientTestSuite) TestArchiveSession() {
+	httpmock.RegisterResponder("POST", "https://jules.googleapis.com/v1alpha/sessions/session%201:archive",
+		func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			require.NoError(suite.T(), err)
+			assert.JSONEq(suite.T(), `{}`, string(body))
+			resp, _ := httpmock.NewJsonResponse(200, Session{ID: "session 1", Archived: true})
+			return resp, nil
+		})
+
+	session, err := suite.client.Sessions.Archive(context.Background(), "session 1")
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), "session 1", session.ID)
+	assert.True(suite.T(), session.Archived)
+}
+
+func (suite *ClientTestSuite) TestUnarchiveSession() {
+	httpmock.RegisterResponder("POST", "https://jules.googleapis.com/v1alpha/sessions/session%201:unarchive",
+		func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			require.NoError(suite.T(), err)
+			assert.JSONEq(suite.T(), `{}`, string(body))
+			resp, _ := httpmock.NewJsonResponse(200, Session{ID: "session 1", Archived: false})
+			return resp, nil
+		})
+
+	session, err := suite.client.Sessions.Unarchive(context.Background(), "sessions/session 1")
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), "session 1", session.ID)
+	assert.False(suite.T(), session.Archived)
+}
+
+func (suite *ClientTestSuite) TestRequestBodyReplayedOnRetry() {
+	request := CreateSessionRequest{Prompt: "Create a new feature"}
+	var bodies []string
+	callCount := 0
+
+	httpmock.RegisterResponder("POST", "https://jules.googleapis.com/v1alpha/sessions",
+		func(req *http.Request) (*http.Response, error) {
+			callCount++
+			body, err := io.ReadAll(req.Body)
+			require.NoError(suite.T(), err)
+			bodies = append(bodies, string(body))
+			if callCount == 1 {
+				return httpmock.NewStringResponse(http.StatusInternalServerError, "try again"), nil
+			}
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, Session{
+				ID:    "new-session-1",
+				State: SessionStateQueued,
+			})
+			return resp, nil
+		})
+
+	session, err := suite.client.Sessions.Create(context.Background(), &request)
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), "new-session-1", session.ID)
+	require.Len(suite.T(), bodies, 2)
+	assert.JSONEq(suite.T(), bodies[0], bodies[1])
 }
 
 // TestListActivities tests listing activities
@@ -332,9 +456,10 @@ func (suite *ClientTestSuite) TestListActivities() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.ListActivities(context.Background(), "session-1", 10)
+	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{PageSize: 10})
 
 	require.NoError(suite.T(), err)
+	activities := response.Activities
 	assert.Len(suite.T(), activities, 1)
 	assert.Equal(suite.T(), "activity-1", activities[0].ID)
 	assert.Equal(suite.T(), "Plan Generated", activities[0].Name)
@@ -355,7 +480,7 @@ func (suite *ClientTestSuite) TestGetActivity() {
 			return resp, nil
 		})
 
-	activity, err := suite.client.GetActivity(context.Background(), "session-1", "activity-1")
+	activity, err := suite.client.Activities.Get(context.Background(), "session-1", "activity-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "activity-1", activity.ID)
@@ -384,12 +509,82 @@ func (suite *ClientTestSuite) TestListSources() {
 			return resp, nil
 		})
 
-	sources, err := suite.client.ListSources(context.Background(), 10)
+	response, err := suite.client.Sources.List(context.Background(), &ListSourcesOptions{PageSize: 10})
 
 	require.NoError(suite.T(), err)
+	sources := response.Sources
 	assert.Len(suite.T(), sources, 1)
 	assert.Equal(suite.T(), "source-1", sources[0].ID)
 	assert.Equal(suite.T(), "test-repo", sources[0].Name)
+}
+
+func (suite *ClientTestSuite) TestListAllSessionsPaginates() {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions?pageSize=2",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, SessionsResponse{
+				Sessions:      []Session{{ID: "session-1"}},
+				NextPageToken: "next-token",
+			})
+			return resp, nil
+		})
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions?pageSize=2&pageToken=next-token",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, SessionsResponse{
+				Sessions: []Session{{ID: "session-2"}},
+			})
+			return resp, nil
+		})
+
+	sessions, err := suite.client.Sessions.ListAll(context.Background(), 2, "")
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), []Session{{ID: "session-1"}, {ID: "session-2"}}, sessions)
+}
+
+func (suite *ClientTestSuite) TestListAllSessionsFilteredPaginates() {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions?filter=archived+%3D+true&pageSize=2",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, SessionsResponse{
+				Sessions:      []Session{{ID: "session-1", Archived: true}},
+				NextPageToken: "next-token",
+			})
+			return resp, nil
+		})
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions?filter=archived+%3D+true&pageSize=2&pageToken=next-token",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, SessionsResponse{
+				Sessions: []Session{{ID: "session-2", Archived: true}},
+			})
+			return resp, nil
+		})
+
+	sessions, err := suite.client.Sessions.ListAll(context.Background(), 2, "archived = true")
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), []Session{{ID: "session-1", Archived: true}, {ID: "session-2", Archived: true}}, sessions)
+}
+
+func (suite *ClientTestSuite) TestListAllSourcesPaginates() {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sources?pageSize=2",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, SourcesResponse{
+				Sources:       []Source{{ID: "github/owner/repo-1"}},
+				NextPageToken: "next-token",
+			})
+			return resp, nil
+		})
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sources?pageSize=2&pageToken=next-token",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, SourcesResponse{
+				Sources: []Source{{ID: "github/owner/repo-2"}},
+			})
+			return resp, nil
+		})
+
+	sources, err := suite.client.Sources.ListAll(context.Background(), 2, "")
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), []Source{{ID: "github/owner/repo-1"}, {ID: "github/owner/repo-2"}}, sources)
 }
 
 // TestGetSource tests getting a specific source
@@ -409,7 +604,7 @@ func (suite *ClientTestSuite) TestGetSource() {
 			return resp, nil
 		})
 
-	source, err := suite.client.GetSource(context.Background(), "source-1")
+	source, err := suite.client.Sources.Get(context.Background(), "source-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "source-1", source.ID)
@@ -423,7 +618,7 @@ func (suite *ClientTestSuite) TestErrorHandling() {
 			return httpmock.NewStringResponse(404, `{"error": "Session not found"}`), nil
 		})
 
-	_, err := suite.client.GetSession(context.Background(), "session-1")
+	_, err := suite.client.Sessions.Get(context.Background(), "session-1")
 
 	require.Error(suite.T(), err)
 	var apiErr *APIError
@@ -445,7 +640,7 @@ func (suite *ClientTestSuite) TestRetryLogic() {
 			return resp, nil
 		})
 
-	session, err := suite.client.GetSession(context.Background(), "session-1")
+	session, err := suite.client.Sessions.Get(context.Background(), "session-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "session-1", session.ID)
@@ -466,7 +661,7 @@ func (suite *ClientTestSuite) TestContextCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	_, err := suite.client.GetSession(ctx, "session-1")
+	_, err := suite.client.Sessions.Get(ctx, "session-1")
 
 	require.Error(suite.T(), err)
 	assert.Contains(suite.T(), err.Error(), "context")

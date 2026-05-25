@@ -3,6 +3,7 @@ package jules
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -40,10 +41,11 @@ func sourcePath(source string) (string, error) {
 		return "", fmt.Errorf("invalid source resource name %q", source)
 	}
 	parts := strings.Split(id, "/")
-	for _, part := range parts {
-		if part == "" {
-			return "", fmt.Errorf("invalid source resource name %q", source)
-		}
+	if slices.Contains(parts, "") {
+		return "", fmt.Errorf("invalid source resource name %q", source)
+	}
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
 	}
 	return "sources/" + strings.Join(parts, "/"), nil
 }

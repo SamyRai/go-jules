@@ -13,28 +13,13 @@ type ListSourcesOptions struct {
 	Filter    string
 }
 
-// ListSources lists available code sources with pagination support
-// Deprecated: Use ListSourcesWithPagination for full pagination support
-func (c *Client) ListSources(ctx context.Context, pageSize int) ([]Source, error) {
-	response, err := c.ListSourcesWithPagination(ctx, pageSize, "", "")
-	if err != nil {
-		return nil, err
-	}
-	return response.Sources, nil
+// SourcesService owns Jules source operations.
+type SourcesService struct {
+	transport *transport
 }
 
-// ListSourcesWithPagination lists available code sources with full pagination and filtering support
-// filter: Optional AIP-160 filter expression (e.g., "name=sources/source1 OR name=sources/source2")
-func (c *Client) ListSourcesWithPagination(ctx context.Context, pageSize int, pageToken, filter string) (*SourcesResponse, error) {
-	return c.ListSourcesWithOptions(ctx, &ListSourcesOptions{
-		PageSize:  pageSize,
-		PageToken: pageToken,
-		Filter:    filter,
-	})
-}
-
-// ListSourcesWithOptions lists available code sources with pagination and filtering.
-func (c *Client) ListSourcesWithOptions(ctx context.Context, options *ListSourcesOptions) (*SourcesResponse, error) {
+// List lists available code sources with pagination and filtering.
+func (s *SourcesService) List(ctx context.Context, options *ListSourcesOptions) (*SourcesResponse, error) {
 	pageSize := 30
 	pageToken := ""
 	filter := ""
@@ -58,22 +43,26 @@ func (c *Client) ListSourcesWithOptions(ctx context.Context, options *ListSource
 	if filter != "" {
 		query.Set("filter", filter)
 	}
-	requestURL := fmt.Sprintf("%s/sources?%s", c.BaseURL, query.Encode())
+	requestURL := fmt.Sprintf("%s/sources?%s", s.transport.client.BaseURL, query.Encode())
 
 	var response SourcesResponse
-	if err := c.doRequestWithJSON(ctx, "GET", requestURL, nil, &response); err != nil {
+	if err := s.transport.doJSON(ctx, "GET", requestURL, nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to list sources: %w", err)
 	}
 
 	return &response, nil
 }
 
-// ListAllSources retrieves every source by following nextPageToken.
-func (c *Client) ListAllSources(ctx context.Context, pageSize int, filter string) ([]Source, error) {
+// ListAll retrieves every source by following nextPageToken.
+func (s *SourcesService) ListAll(ctx context.Context, pageSize int, filter string) ([]Source, error) {
 	var sources []Source
 	pageToken := ""
 	for {
-		response, err := c.ListSourcesWithPagination(ctx, pageSize, pageToken, filter)
+		response, err := s.List(ctx, &ListSourcesOptions{
+			PageSize:  pageSize,
+			PageToken: pageToken,
+			Filter:    filter,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -85,8 +74,8 @@ func (c *Client) ListAllSources(ctx context.Context, pageSize int, filter string
 	}
 }
 
-// GetSource retrieves a specific source by ID
-func (c *Client) GetSource(ctx context.Context, sourceID string) (*Source, error) {
+// Get retrieves a specific source by ID.
+func (s *SourcesService) Get(ctx context.Context, sourceID string) (*Source, error) {
 	if sourceID == "" {
 		return nil, fmt.Errorf("source ID is required")
 	}
@@ -95,10 +84,10 @@ func (c *Client) GetSource(ctx context.Context, sourceID string) (*Source, error
 	if err != nil {
 		return nil, err
 	}
-	requestURL := fmt.Sprintf("%s/%s", c.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s", s.transport.client.BaseURL, resourcePath)
 
 	var source Source
-	if err := c.doRequestWithJSON(ctx, "GET", requestURL, nil, &source); err != nil {
+	if err := s.transport.doJSON(ctx, "GET", requestURL, nil, &source); err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
 

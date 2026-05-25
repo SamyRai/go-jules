@@ -50,6 +50,7 @@ func (s SessionState) IsSuccessful() bool {
 type AutomationMode string
 
 const (
+	AutomationModeUnspecified  AutomationMode = "AUTOMATION_MODE_UNSPECIFIED"
 	AutomationModeAutoCreatePR AutomationMode = "AUTO_CREATE_PR"
 )
 
@@ -58,12 +59,13 @@ type Session struct {
 	Name                string         `json:"name"`
 	Title               string         `json:"title"`
 	State               SessionState   `json:"state"`
-	CreateTime          time.Time      `json:"createTime,omitempty,omitzero"`
-	UpdateTime          time.Time      `json:"updateTime,omitempty,omitzero"`
+	CreateTime          time.Time      `json:"createTime,omitzero"`
+	UpdateTime          time.Time      `json:"updateTime,omitzero"`
 	SourceContext       *SourceContext `json:"sourceContext,omitempty"`
 	Prompt              string         `json:"prompt"`
 	URL                 string         `json:"url"`
 	ID                  string         `json:"id"`
+	Archived            bool           `json:"archived,omitempty"`
 	RequirePlanApproval bool           `json:"requirePlanApproval,omitempty"`
 	AutomationMode      AutomationMode `json:"automationMode,omitempty"`
 	Outputs             []Output       `json:"outputs,omitempty"`
@@ -72,6 +74,7 @@ type Session struct {
 // Output represents session outputs (e.g., PRs created)
 type Output struct {
 	PullRequest *PullRequest `json:"pullRequest,omitempty"`
+	ChangeSet   *ChangeSet   `json:"changeSet,omitempty"`
 }
 
 // PullRequest represents a GitHub PR created by Jules
@@ -79,6 +82,8 @@ type PullRequest struct {
 	URL         string `json:"url"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	BaseRef     string `json:"baseRef,omitempty"`
+	HeadRef     string `json:"headRef,omitempty"`
 }
 
 // ============================================================================
@@ -87,8 +92,10 @@ type PullRequest struct {
 
 // SourceContext represents the source context
 type SourceContext struct {
-	Source            string             `json:"source"`
-	GithubRepoContext *GithubRepoContext `json:"githubRepoContext,omitempty"`
+	Source                      string             `json:"source"`
+	GithubRepoContext           *GithubRepoContext `json:"githubRepoContext,omitempty"`
+	WorkingBranch               string             `json:"workingBranch,omitempty"`
+	EnvironmentVariablesEnabled bool               `json:"environmentVariablesEnabled,omitempty"`
 }
 
 // GithubRepoContext represents GitHub repo context
@@ -133,7 +140,7 @@ const (
 // Activity represents an activity within a session.
 type Activity struct {
 	Name             string             `json:"name"`
-	CreateTime       time.Time          `json:"createTime,omitempty,omitzero"`
+	CreateTime       time.Time          `json:"createTime,omitzero"`
 	Originator       ActivityOriginator `json:"originator"`
 	Description      string             `json:"description,omitempty"`
 	Status           string             `json:"status,omitempty"`
@@ -157,7 +164,7 @@ type PlanGenerated struct {
 type Plan struct {
 	ID         string    `json:"id"`
 	Steps      []Step    `json:"steps"`
-	CreateTime time.Time `json:"createTime,omitempty,omitzero"`
+	CreateTime time.Time `json:"createTime,omitzero"`
 }
 
 // Step represents a step in the plan

@@ -18,8 +18,12 @@ import (
 
 var sensitiveLogValuePattern = regexp.MustCompile(`(?i)((?:api[_-]?key|token|auth|secret|credential)[^=\s]*=)[^&\s"']+`)
 
-// doRequestWithJSON performs an HTTP request with JSON payload and response handling
-func (c *Client) doRequestWithJSON(ctx context.Context, method, url string, body interface{}, result interface{}) error {
+type transport struct {
+	client *Client
+}
+
+// doJSON performs an HTTP request with JSON payload and response handling.
+func (t *transport) doJSON(ctx context.Context, method, url string, body any, result any) error {
 	var reqBody io.Reader
 
 	if body != nil {
@@ -38,13 +42,14 @@ func (c *Client) doRequestWithJSON(ctx context.Context, method, url string, body
 	if body != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
+	c := t.client
 	httpReq.Header.Set("X-Goog-Api-Key", c.APIKey)
 	httpReq.Header.Set("Accept", "application/json")
 	if c.UserAgent != "" {
 		httpReq.Header.Set("User-Agent", c.UserAgent)
 	}
 
-	resp, err := c.doRequest(httpReq)
+	resp, err := t.do(httpReq)
 	if err != nil {
 		return err
 	}
@@ -62,8 +67,9 @@ func (c *Client) doRequestWithJSON(ctx context.Context, method, url string, body
 	return nil
 }
 
-// doRequest performs an HTTP request with retry logic and error handling
-func (c *Client) doRequest(req *http.Request) (*http.Response, error) {
+// do performs an HTTP request with retry logic and error handling.
+func (t *transport) do(req *http.Request) (*http.Response, error) {
+	c := t.client
 	var resp *http.Response
 	var err error
 

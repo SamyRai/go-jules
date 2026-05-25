@@ -49,7 +49,10 @@ func (suite *ActivityTestSuite) TestListActivitiesWithPagination() {
 			return resp, nil
 		})
 
-	response, err := suite.client.ListActivitiesWithPagination(context.Background(), "session-1", 5, "test-token")
+	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{
+		PageSize:  5,
+		PageToken: "test-token",
+	})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), response.Activities, 1)
@@ -76,13 +79,13 @@ func (suite *ActivityTestSuite) TestListActivitiesWithOptionsCreateTime() {
 		},
 	}
 
-	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?pageSize=25",
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?createTime=2026-01-01T00%3A00%3A00Z&pageSize=25",
 		func(req *http.Request) (*http.Response, error) {
 			resp, _ := httpmock.NewJsonResponse(200, mockResponse)
 			return resp, nil
 		})
 
-	response, err := suite.client.ListActivitiesWithOptions(context.Background(), "session-1", &ListActivitiesOptions{
+	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{
 		PageSize:   25,
 		CreateTime: testTime("2026-01-01T00:00:00Z"),
 	})
@@ -90,6 +93,57 @@ func (suite *ActivityTestSuite) TestListActivitiesWithOptionsCreateTime() {
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), response.Activities, 1)
 	assert.Equal(suite.T(), "activity-1", response.Activities[0].ID)
+}
+
+func (suite *ActivityTestSuite) TestListActivitiesWithOptionsFilter() {
+	mockResponse := ActivitiesResponse{
+		Activities: []Activity{
+			{
+				ID:         "activity-1",
+				Name:       "Recent Progress",
+				Originator: ActivityOriginatorAgent,
+				CreateTime: testTime("2024-09-04T11:00:00Z"),
+			},
+		},
+	}
+
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?filter=create_time+%3E+%222024-09-04T10%3A00%3A00Z%22&pageSize=25",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(200, mockResponse)
+			return resp, nil
+		})
+
+	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{
+		PageSize: 25,
+		Filter:   `create_time > "2024-09-04T10:00:00Z"`,
+	})
+
+	require.NoError(suite.T(), err)
+	require.Len(suite.T(), response.Activities, 1)
+	assert.Equal(suite.T(), "activity-1", response.Activities[0].ID)
+}
+
+func (suite *ActivityTestSuite) TestListAllActivitiesPaginates() {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?pageSize=2",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, ActivitiesResponse{
+				Activities:    []Activity{{ID: "activity-1"}},
+				NextPageToken: "next-token",
+			})
+			return resp, nil
+		})
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?pageSize=2&pageToken=next-token",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(http.StatusOK, ActivitiesResponse{
+				Activities: []Activity{{ID: "activity-2"}},
+			})
+			return resp, nil
+		})
+
+	activities, err := suite.client.Activities.ListAll(context.Background(), "session-1", 2)
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), []Activity{{ID: "activity-1"}, {ID: "activity-2"}}, activities)
 }
 
 // TestListActivitiesFiltered tests filtering activities
@@ -117,13 +171,13 @@ func (suite *ActivityTestSuite) TestListActivitiesFiltered() {
 		},
 	}
 
-	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?pageSize=50",
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/session-1/activities?createTime=2024-01-01T00%3A00%3A00Z&pageSize=50",
 		func(req *http.Request) (*http.Response, error) {
 			resp, _ := httpmock.NewJsonResponse(200, mockResponse)
 			return resp, nil
 		})
 
-	activities, err := suite.client.ListActivitiesFiltered(context.Background(), "session-1", filter)
+	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", filter)
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -157,7 +211,7 @@ func (suite *ActivityTestSuite) TestSearchActivities() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.SearchActivities(context.Background(), "session-1", options)
+	activities, err := suite.client.Activities.Search(context.Background(), "session-1", options)
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -185,7 +239,7 @@ func (suite *ActivityTestSuite) TestGetActivitiesByType() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.GetActivitiesByType(context.Background(), "session-1", "plan")
+	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", &ActivityFilter{Type: "plan"})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -211,7 +265,8 @@ func (suite *ActivityTestSuite) TestGetActivitiesWithPlans() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.GetActivitiesWithPlans(context.Background(), "session-1")
+	hasPlan := true
+	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", &ActivityFilter{HasPlan: &hasPlan})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -238,7 +293,8 @@ func (suite *ActivityTestSuite) TestGetActivitiesWithArtifacts() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.GetActivitiesWithArtifacts(context.Background(), "session-1")
+	hasArtifacts := true
+	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", &ActivityFilter{HasArtifacts: &hasArtifacts})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -279,7 +335,7 @@ func (suite *ActivityTestSuite) TestGetActivity() {
 			return resp, nil
 		})
 
-	activity, err := suite.client.GetActivity(context.Background(), "session-1", "activity-1")
+	activity, err := suite.client.Activities.Get(context.Background(), "session-1", "activity-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "activity-1", activity.ID)

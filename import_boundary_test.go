@@ -23,8 +23,8 @@ func TestPackageHasNoAppImports(t *testing.T) {
 		"path/filepath",
 	}
 
-	imports := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, importPath := range imports {
+	imports := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
+	for importPath := range imports {
 		for _, forbiddenImport := range forbidden {
 			if strings.Contains(importPath, forbiddenImport) {
 				t.Fatalf("go-jules imports forbidden dependency %q via %q", forbiddenImport, importPath)

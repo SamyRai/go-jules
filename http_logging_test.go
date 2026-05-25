@@ -30,7 +30,7 @@ func TestClientLogging_DisabledByDefault(t *testing.T) {
 	client.HTTPClient = &http.Client{}
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/123", nil)
-	_, err := client.doRequest(req)
+	_, err := client.transport.do(req)
 	require.NoError(t, err)
 
 	assert.Empty(t, logBuf.String(), "Expected no logs to be written when debugLog is false")
@@ -50,7 +50,7 @@ func TestClientLogging_EnabledLogsRequestData(t *testing.T) {
 	client.HTTPClient = &http.Client{}
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/123", nil)
-	_, err := client.doRequest(req)
+	_, err := client.transport.do(req)
 	require.NoError(t, err)
 
 	logOutput := logBuf.String()
@@ -76,7 +76,7 @@ func TestClientLogging_RedactsSensitiveQueryParams(t *testing.T) {
 	client.HTTPClient = &http.Client{}
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions?api_key=secret1&token=secret2&auth_token=secret3&credential=secret4&safe_param=hello", nil)
-	_, err := client.doRequest(req)
+	_, err := client.transport.do(req)
 	require.NoError(t, err)
 
 	logOutput := logBuf.String()
@@ -117,7 +117,7 @@ func TestClientLogging_LogsRetriesAndErrors(t *testing.T) {
 	client.HTTPClient = &http.Client{}
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/123", nil)
-	_, err := client.doRequest(req)
+	_, err := client.transport.do(req)
 	require.NoError(t, err)
 
 	logOutput := logBuf.String()
@@ -150,7 +150,7 @@ func TestClientLogging_RedactsSensitiveErrorDetails(t *testing.T) {
 		WithRetryAttempts(0))
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions?api_key=secret1&token=secret2", nil)
-	_, err := client.doRequest(req)
+	_, err := client.transport.do(req)
 	require.Error(t, err)
 
 	logOutput := logBuf.String()

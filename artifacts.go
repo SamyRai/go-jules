@@ -14,10 +14,15 @@ type ActivityArtifact struct {
 	Artifact   Artifact
 }
 
-// GetArtifactsFromActivity retrieves all embedded artifacts from a documented
+// ArtifactsService owns Jules artifact helpers.
+type ArtifactsService struct {
+	activities *ActivitiesService
+}
+
+// ListFromActivity retrieves all embedded artifacts from a documented
 // activity response.
-func (c *Client) GetArtifactsFromActivity(ctx context.Context, sessionID, activityID string) ([]Artifact, error) {
-	activity, err := c.GetActivity(ctx, sessionID, activityID)
+func (a *ArtifactsService) ListFromActivity(ctx context.Context, sessionID, activityID string) ([]Artifact, error) {
+	activity, err := a.activities.Get(ctx, sessionID, activityID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get activity: %w", err)
 	}
@@ -25,10 +30,10 @@ func (c *Client) GetArtifactsFromActivity(ctx context.Context, sessionID, activi
 	return activity.Artifacts, nil
 }
 
-// GetAllSessionArtifacts retrieves all embedded artifacts from all documented
+// ListFromSession retrieves all embedded artifacts from all documented
 // activity responses in a session.
-func (c *Client) GetAllSessionArtifacts(ctx context.Context, sessionID string) ([]ActivityArtifact, error) {
-	activities, err := c.ListAllActivities(ctx, sessionID, 100)
+func (a *ArtifactsService) ListFromSession(ctx context.Context, sessionID string) ([]ActivityArtifact, error) {
+	activities, err := a.activities.ListAll(ctx, sessionID, 100)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list activities: %w", err)
 	}
@@ -47,8 +52,17 @@ func (c *Client) GetAllSessionArtifacts(ctx context.Context, sessionID string) (
 	return allArtifacts, nil
 }
 
+// Content returns the documented embedded content for an artifact.
+func (a *ArtifactsService) Content(artifact Artifact) ([]byte, error) {
+	return artifactContent(artifact)
+}
+
 // ArtifactContent returns the documented embedded content for an artifact.
 func ArtifactContent(artifact Artifact) ([]byte, error) {
+	return artifactContent(artifact)
+}
+
+func artifactContent(artifact Artifact) ([]byte, error) {
 	switch {
 	case artifact.BashOutput != nil:
 		var builder strings.Builder
