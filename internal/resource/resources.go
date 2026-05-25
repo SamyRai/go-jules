@@ -1,4 +1,4 @@
-package jules
+package resource
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ func NormalizeSourceName(source string) string {
 	return "sources/" + source
 }
 
-func sessionPath(session string) (string, error) {
+func SessionPath(session string) (string, error) {
 	name := NormalizeSessionName(session)
 	id, ok := strings.CutPrefix(name, "sessions/")
 	if !ok || id == "" || strings.Contains(id, "/") {
@@ -34,7 +34,7 @@ func sessionPath(session string) (string, error) {
 	return "sessions/" + url.PathEscape(id), nil
 }
 
-func sourcePath(source string) (string, error) {
+func SourcePath(source string) (string, error) {
 	name := NormalizeSourceName(source)
 	id, ok := strings.CutPrefix(name, "sources/")
 	if !ok || id == "" {
@@ -50,7 +50,7 @@ func sourcePath(source string) (string, error) {
 	return "sources/" + strings.Join(parts, "/"), nil
 }
 
-func activityPath(session, activity string) (string, error) {
+func ActivityPath(session, activity string) (string, error) {
 	activity = strings.TrimSpace(activity)
 	if strings.HasPrefix(activity, "sessions/") {
 		parts := strings.Split(activity, "/")
@@ -68,7 +68,7 @@ func activityPath(session, activity string) (string, error) {
 		return "", fmt.Errorf("invalid activity ID %q", activity)
 	}
 
-	sessionResourcePath, err := sessionPath(session)
+	sessionResourcePath, err := SessionPath(session)
 	if err != nil {
 		return "", err
 	}

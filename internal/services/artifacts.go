@@ -1,27 +1,39 @@
-package jules
+package services
 
 import (
 	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
+
+	"github.com/SamyRai/go-jules/internal/model"
 )
 
 // ActivityArtifact represents an artifact with its activity context.
 type ActivityArtifact struct {
 	ActivityID string
 	Index      int
-	Artifact   Artifact
+	Artifact   model.Artifact
 }
 
 // ArtifactsService owns Jules artifact helpers.
 type ArtifactsService struct {
-	activities *ActivitiesService
+	activities ActivityGetterLister
+}
+
+// ActivityGetterLister is the activity dependency artifacts need.
+type ActivityGetterLister interface {
+	Get(ctx context.Context, sessionID, activityID string) (*model.Activity, error)
+	ListAll(ctx context.Context, sessionID string, pageSize int) ([]model.Activity, error)
+}
+
+func NewArtifactsService(activities ActivityGetterLister) *ArtifactsService {
+	return &ArtifactsService{activities: activities}
 }
 
 // ListFromActivity retrieves all embedded artifacts from a documented
 // activity response.
-func (a *ArtifactsService) ListFromActivity(ctx context.Context, sessionID, activityID string) ([]Artifact, error) {
+func (a *ArtifactsService) ListFromActivity(ctx context.Context, sessionID, activityID string) ([]model.Artifact, error) {
 	activity, err := a.activities.Get(ctx, sessionID, activityID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get activity: %w", err)
@@ -53,16 +65,16 @@ func (a *ArtifactsService) ListFromSession(ctx context.Context, sessionID string
 }
 
 // Content returns the documented embedded content for an artifact.
-func (a *ArtifactsService) Content(artifact Artifact) ([]byte, error) {
+func (a *ArtifactsService) Content(artifact model.Artifact) ([]byte, error) {
 	return artifactContent(artifact)
 }
 
 // ArtifactContent returns the documented embedded content for an artifact.
-func ArtifactContent(artifact Artifact) ([]byte, error) {
+func ArtifactContent(artifact model.Artifact) ([]byte, error) {
 	return artifactContent(artifact)
 }
 
-func artifactContent(artifact Artifact) ([]byte, error) {
+func artifactContent(artifact model.Artifact) ([]byte, error) {
 	switch {
 	case artifact.BashOutput != nil:
 		var builder strings.Builder

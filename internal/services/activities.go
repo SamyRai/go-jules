@@ -1,4 +1,4 @@
-package jules
+package services
 
 import (
 	"context"
@@ -6,6 +6,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/SamyRai/go-jules/internal/model"
+	"github.com/SamyRai/go-jules/internal/resource"
 )
 
 // ListActivitiesOptions controls pagination and official API filters.
@@ -36,13 +39,18 @@ type ActivitySearchOptions struct {
 
 // ActivitiesService owns Jules activity operations.
 type ActivitiesService struct {
-	transport *transport
+	baseURL string
+	doer    jsonDoer
+}
+
+func NewActivitiesService(baseURL string, doer jsonDoer) *ActivitiesService {
+	return &ActivitiesService{baseURL: baseURL, doer: doer}
 }
 
 // List lists activities with pagination. When CreateTime is set, the request
 // includes the documented createTime cursor filter and the response is filtered
 // client-side as a defensive guard.
-func (a *ActivitiesService) List(ctx context.Context, sessionID string, options *ListActivitiesOptions) (*ActivitiesResponse, error) {
+func (a *ActivitiesService) List(ctx context.Context, sessionID string, options *ListActivitiesOptions) (*model.ActivitiesResponse, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("session ID is required")
 	}
@@ -56,14 +64,9 @@ func (a *ActivitiesService) List(ctx context.Context, sessionID string, options 
 		filter = options.Filter
 		createTime = options.CreateTime
 	}
-	if pageSize <= 0 {
-		pageSize = 50
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pageSize = normalizePageSize(pageSize, 50, 100)
 
-	resourcePath, err := sessionPath(sessionID)
+	resourcePath, err := resource.SessionPath(sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,10 +83,10 @@ func (a *ActivitiesService) List(ctx context.Context, sessionID string, options 
 		query.Set("createTime", createTime.Format(time.RFC3339Nano))
 	}
 
-	requestURL := fmt.Sprintf("%s/%s/activities?%s", a.transport.client.BaseURL, resourcePath, query.Encode())
+	requestURL := fmt.Sprintf("%s/%s/activities?%s", a.baseURL, resourcePath, query.Encode())
 
-	var response ActivitiesResponse
-	if err := a.transport.doJSON(ctx, "GET", requestURL, nil, &response); err != nil {
+	var response model.ActivitiesResponse
+	if err := a.doer.DoJSON(ctx, "GET", requestURL, nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to list activities: %w", err)
 	}
 	if !createTime.IsZero() {
@@ -94,8 +97,8 @@ func (a *ActivitiesService) List(ctx context.Context, sessionID string, options 
 }
 
 // ListAll retrieves every activity by following nextPageToken.
-func (a *ActivitiesService) ListAll(ctx context.Context, sessionID string, pageSize int) ([]Activity, error) {
-	var activities []Activity
+func (a *ActivitiesService) ListAll(ctx context.Context, sessionID string, pageSize int) ([]model.Activity, error) {
+	var activities []model.Activity
 	pageToken := ""
 	for {
 		response, err := a.List(ctx, sessionID, &ListActivitiesOptions{
@@ -114,8 +117,8 @@ func (a *ActivitiesService) ListAll(ctx context.Context, sessionID string, pageS
 }
 
 // ListSince retrieves activities created at or after the cursor time.
-func (a *ActivitiesService) ListSince(ctx context.Context, sessionID string, cursor time.Time, pageSize int) ([]Activity, error) {
-	var activities []Activity
+func (a *ActivitiesService) ListSince(ctx context.Context, sessionID string, cursor time.Time, pageSize int) ([]model.Activity, error) {
+	var activities []model.Activity
 	pageToken := ""
 	for {
 		response, err := a.List(ctx, sessionID, &ListActivitiesOptions{
@@ -134,11 +137,11 @@ func (a *ActivitiesService) ListSince(ctx context.Context, sessionID string, cur
 	}
 }
 
-func activitiesAtOrAfter(activities []Activity, cursor time.Time) []Activity {
+func activitiesAtOrAfter(activities []model.Activity, cursor time.Time) []model.Activity {
 	if cursor.IsZero() {
 		return activities
 	}
-	filtered := make([]Activity, 0, len(activities))
+	filtered := make([]model.Activity, 0, len(activities))
 	for _, activity := range activities {
 		if activity.CreateTime.IsZero() {
 			continue
@@ -151,7 +154,7 @@ func activitiesAtOrAfter(activities []Activity, cursor time.Time) []Activity {
 }
 
 // ActivityCursor returns the latest createTime in the provided activities.
-func ActivityCursor(activities []Activity) time.Time {
+func ActivityCursor(activities []model.Activity) time.Time {
 	var cursor time.Time
 	for _, activity := range activities {
 		if activity.CreateTime.After(cursor) {
@@ -162,19 +165,19 @@ func ActivityCursor(activities []Activity) time.Time {
 }
 
 // Get retrieves a specific activity by ID or resource name.
-func (a *ActivitiesService) Get(ctx context.Context, sessionID, activityID string) (*Activity, error) {
+func (a *ActivitiesService) Get(ctx context.Context, sessionID, activityID string) (*model.Activity, error) {
 	if activityID == "" {
 		return nil, fmt.Errorf("activity ID is required")
 	}
 
-	resourcePath, err := activityPath(sessionID, activityID)
+	resourcePath, err := resource.ActivityPath(sessionID, activityID)
 	if err != nil {
 		return nil, err
 	}
-	requestURL := fmt.Sprintf("%s/%s", a.transport.client.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s", a.baseURL, resourcePath)
 
-	var activity Activity
-	if err := a.transport.doJSON(ctx, "GET", requestURL, nil, &activity); err != nil {
+	var activity model.Activity
+	if err := a.doer.DoJSON(ctx, "GET", requestURL, nil, &activity); err != nil {
 		return nil, fmt.Errorf("failed to get activity: %w", err)
 	}
 
@@ -182,7 +185,7 @@ func (a *ActivitiesService) Get(ctx context.Context, sessionID, activityID strin
 }
 
 // Filter lists activities and applies client-side filters over documented fields.
-func (a *ActivitiesService) Filter(ctx context.Context, sessionID string, filter *ActivityFilter) ([]Activity, error) {
+func (a *ActivitiesService) Filter(ctx context.Context, sessionID string, filter *ActivityFilter) ([]model.Activity, error) {
 	options := &ListActivitiesOptions{}
 	if filter != nil {
 		options.CreateTime = filter.CreateTime
@@ -201,7 +204,7 @@ func (a *ActivitiesService) Filter(ctx context.Context, sessionID string, filter
 
 // Search searches documented activity payloads client-side. It does
 // not call an undocumented search endpoint.
-func (a *ActivitiesService) Search(ctx context.Context, sessionID string, options *ActivitySearchOptions) ([]Activity, error) {
+func (a *ActivitiesService) Search(ctx context.Context, sessionID string, options *ActivitySearchOptions) ([]model.Activity, error) {
 	activities, err := a.ListAll(ctx, sessionID, 100)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list activities for search: %w", err)
@@ -221,12 +224,12 @@ func (a *ActivitiesService) Search(ctx context.Context, sessionID string, option
 }
 
 // FilterActivities applies client-side filters over documented activity fields.
-func FilterActivities(activities []Activity, filter *ActivityFilter) []Activity {
+func FilterActivities(activities []model.Activity, filter *ActivityFilter) []model.Activity {
 	if filter == nil {
 		return activities
 	}
 
-	filtered := make([]Activity, 0, len(activities))
+	filtered := make([]model.Activity, 0, len(activities))
 	for _, activity := range activities {
 		if filter.Type != "" && !activityMatchesType(activity, filter.Type) {
 			continue
@@ -252,7 +255,7 @@ func FilterActivities(activities []Activity, filter *ActivityFilter) []Activity 
 	return filtered
 }
 
-func activityMatchesType(activity Activity, activityType string) bool {
+func activityMatchesType(activity model.Activity, activityType string) bool {
 	normalized := strings.ToLower(activityType)
 	switch {
 	case strings.Contains(normalized, "plan") && activityHasPlan(activity):
@@ -276,16 +279,16 @@ func activityMatchesType(activity Activity, activityType string) bool {
 	return strings.Contains(strings.ToLower(activitySearchText(activity)), normalized)
 }
 
-func activityHasPlan(activity Activity) bool {
+func activityHasPlan(activity model.Activity) bool {
 	return activity.PlanGenerated != nil || activity.PlanApproved != nil
 }
 
-func searchActivityPayloads(activities []Activity, query string) []Activity {
+func searchActivityPayloads(activities []model.Activity, query string) []model.Activity {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
 		return activities
 	}
-	filtered := make([]Activity, 0, len(activities))
+	filtered := make([]model.Activity, 0, len(activities))
 	for _, activity := range activities {
 		if strings.Contains(strings.ToLower(activitySearchText(activity)), query) {
 			filtered = append(filtered, activity)
@@ -294,7 +297,7 @@ func searchActivityPayloads(activities []Activity, query string) []Activity {
 	return filtered
 }
 
-func activitySearchText(activity Activity) string {
+func activitySearchText(activity model.Activity) string {
 	parts := []string{
 		activity.Name,
 		activity.Description,

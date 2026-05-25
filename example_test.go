@@ -15,7 +15,7 @@ func ExampleSessionsService_Create() {
 	}))
 	defer cleanup()
 
-	session, _ := client.Sessions.Create(context.Background(), &CreateSessionRequest{
+	session, _ := client.Sessions().Create(context.Background(), &CreateSessionRequest{
 		Prompt: "Add tests for authentication",
 		SourceContext: &SourceContext{
 			Source: "github/owner/repo",
@@ -38,7 +38,7 @@ func ExampleActivitiesService_ListSince() {
 	defer cleanup()
 
 	cursor := time.Date(2026, 1, 26, 9, 0, 0, 0, time.UTC)
-	activities, _ := client.Activities.ListSince(context.Background(), "sessions/1", cursor, 50)
+	activities, _ := client.Activities().ListSince(context.Background(), "sessions/1", cursor, 50)
 
 	fmt.Println(len(activities), ActivityCursor(activities).Format(time.RFC3339))
 	// Output: 1 2026-01-26T09:01:00Z

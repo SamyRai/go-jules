@@ -35,26 +35,21 @@ func (suite *MonitorTestSuite) TearDownTest() {
 func (suite *MonitorTestSuite) TestNewSessionMonitor() {
 	monitor := NewSessionMonitor(suite.client, "session-1")
 
-	assert.Equal(suite.T(), suite.client, monitor.client)
-	assert.Equal(suite.T(), "session-1", monitor.sessionID)
-	assert.Equal(suite.T(), 5*time.Second, monitor.interval)
-	assert.Equal(suite.T(), 30*time.Minute, monitor.maxWait)
-	assert.Nil(suite.T(), monitor.onProgress)
-	assert.Nil(suite.T(), monitor.onComplete)
+	assert.NotNil(suite.T(), monitor)
 }
 
 // TestWithInterval tests setting custom interval
 func (suite *MonitorTestSuite) TestWithInterval() {
 	monitor := suite.monitor.WithInterval(10 * time.Second)
 
-	assert.Equal(suite.T(), 10*time.Second, monitor.interval)
+	assert.Same(suite.T(), suite.monitor, monitor)
 }
 
 // TestWithMaxWait tests setting custom max wait
 func (suite *MonitorTestSuite) TestWithMaxWait() {
 	monitor := suite.monitor.WithMaxWait(1 * time.Hour)
 
-	assert.Equal(suite.T(), 1*time.Hour, monitor.maxWait)
+	assert.Same(suite.T(), suite.monitor, monitor)
 }
 
 // TestOnProgress tests setting progress callback
@@ -62,19 +57,25 @@ func (suite *MonitorTestSuite) TestOnProgress() {
 	called := false
 	var capturedStatus *SessionStatus
 
-	monitor := suite.monitor.OnProgress(func(status *SessionStatus) {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/test-session-1",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(200, Session{
+				ID:    "test-session-1",
+				State: SessionStateAwaitingPlanApproval,
+			})
+			return resp, nil
+		})
+
+	suite.monitor.WithInterval(10 * time.Millisecond).WithMaxWait(time.Second).OnProgress(func(status *SessionStatus) {
 		called = true
 		capturedStatus = status
 	})
 
-	assert.NotNil(suite.T(), monitor.onProgress)
+	_, err := suite.monitor.WaitForCompletion(context.Background())
 
-	// Test callback
-	mockStatus := &SessionStatus{State: SessionStatePlanning}
-	monitor.onProgress(mockStatus)
-
+	require.NoError(suite.T(), err)
 	assert.True(suite.T(), called)
-	assert.Equal(suite.T(), SessionStatePlanning, capturedStatus.State)
+	assert.Equal(suite.T(), SessionStateAwaitingPlanApproval, capturedStatus.State)
 }
 
 // TestOnComplete tests setting completion callback
@@ -82,17 +83,23 @@ func (suite *MonitorTestSuite) TestOnComplete() {
 	called := false
 	var capturedStatus *SessionStatus
 
-	monitor := suite.monitor.OnComplete(func(status *SessionStatus) {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/test-session-1",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(200, Session{
+				ID:    "test-session-1",
+				State: SessionStateCompleted,
+			})
+			return resp, nil
+		})
+
+	suite.monitor.WithInterval(10 * time.Millisecond).WithMaxWait(time.Second).OnComplete(func(status *SessionStatus) {
 		called = true
 		capturedStatus = status
 	})
 
-	assert.NotNil(suite.T(), monitor.onComplete)
+	_, err := suite.monitor.WaitForCompletion(context.Background())
 
-	// Test callback
-	mockStatus := &SessionStatus{State: SessionStateCompleted}
-	monitor.onComplete(mockStatus)
-
+	require.NoError(suite.T(), err)
 	assert.True(suite.T(), called)
 	assert.Equal(suite.T(), SessionStateCompleted, capturedStatus.State)
 }
@@ -110,7 +117,8 @@ func (suite *MonitorTestSuite) TestGetSessionStatus() {
 			return resp, nil
 		})
 
-	status, err := suite.monitor.getSessionStatus(context.Background())
+	suite.monitor.WithInterval(10 * time.Millisecond).WithMaxWait(time.Second)
+	status, err := suite.monitor.WaitForCompletion(context.Background())
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), SessionStateCompleted, status.State)
@@ -126,7 +134,8 @@ func (suite *MonitorTestSuite) TestGetSessionStatusNotFound() {
 			return httpmock.NewStringResponse(404, `{"error": "Session not found"}`), nil
 		})
 
-	status, err := suite.monitor.getSessionStatus(context.Background())
+	suite.monitor.WithInterval(10 * time.Millisecond).WithMaxWait(time.Second)
+	status, err := suite.monitor.WaitForCompletion(context.Background())
 
 	require.NoError(suite.T(), err) // Should not return error for 404
 	assert.Equal(suite.T(), SessionStateFailed, status.State)

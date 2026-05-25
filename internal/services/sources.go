@@ -1,10 +1,17 @@
-package jules
+package services
 
 import (
 	"context"
 	"fmt"
 	"net/url"
+
+	"github.com/SamyRai/go-jules/internal/model"
+	"github.com/SamyRai/go-jules/internal/resource"
 )
+
+type jsonDoer interface {
+	DoJSON(ctx context.Context, method, url string, body any, result any) error
+}
 
 // ListSourcesOptions controls source pagination and filtering.
 type ListSourcesOptions struct {
@@ -15,11 +22,16 @@ type ListSourcesOptions struct {
 
 // SourcesService owns Jules source operations.
 type SourcesService struct {
-	transport *transport
+	baseURL string
+	doer    jsonDoer
+}
+
+func NewSourcesService(baseURL string, doer jsonDoer) *SourcesService {
+	return &SourcesService{baseURL: baseURL, doer: doer}
 }
 
 // List lists available code sources with pagination and filtering.
-func (s *SourcesService) List(ctx context.Context, options *ListSourcesOptions) (*SourcesResponse, error) {
+func (s *SourcesService) List(ctx context.Context, options *ListSourcesOptions) (*model.SourcesResponse, error) {
 	pageSize := 30
 	pageToken := ""
 	filter := ""
@@ -28,12 +40,7 @@ func (s *SourcesService) List(ctx context.Context, options *ListSourcesOptions) 
 		pageToken = options.PageToken
 		filter = options.Filter
 	}
-	if pageSize <= 0 {
-		pageSize = 30 // default page size per API docs
-	}
-	if pageSize > 100 {
-		pageSize = 100 // max page size per API docs
-	}
+	pageSize = normalizePageSize(pageSize, 30, 100)
 
 	query := url.Values{}
 	query.Set("pageSize", fmt.Sprintf("%d", pageSize))
@@ -43,10 +50,10 @@ func (s *SourcesService) List(ctx context.Context, options *ListSourcesOptions) 
 	if filter != "" {
 		query.Set("filter", filter)
 	}
-	requestURL := fmt.Sprintf("%s/sources?%s", s.transport.client.BaseURL, query.Encode())
+	requestURL := fmt.Sprintf("%s/sources?%s", s.baseURL, query.Encode())
 
-	var response SourcesResponse
-	if err := s.transport.doJSON(ctx, "GET", requestURL, nil, &response); err != nil {
+	var response model.SourcesResponse
+	if err := s.doer.DoJSON(ctx, "GET", requestURL, nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to list sources: %w", err)
 	}
 
@@ -54,8 +61,8 @@ func (s *SourcesService) List(ctx context.Context, options *ListSourcesOptions) 
 }
 
 // ListAll retrieves every source by following nextPageToken.
-func (s *SourcesService) ListAll(ctx context.Context, pageSize int, filter string) ([]Source, error) {
-	var sources []Source
+func (s *SourcesService) ListAll(ctx context.Context, pageSize int, filter string) ([]model.Source, error) {
+	var sources []model.Source
 	pageToken := ""
 	for {
 		response, err := s.List(ctx, &ListSourcesOptions{
@@ -75,19 +82,19 @@ func (s *SourcesService) ListAll(ctx context.Context, pageSize int, filter strin
 }
 
 // Get retrieves a specific source by ID.
-func (s *SourcesService) Get(ctx context.Context, sourceID string) (*Source, error) {
+func (s *SourcesService) Get(ctx context.Context, sourceID string) (*model.Source, error) {
 	if sourceID == "" {
 		return nil, fmt.Errorf("source ID is required")
 	}
 
-	resourcePath, err := sourcePath(sourceID)
+	resourcePath, err := resource.SourcePath(sourceID)
 	if err != nil {
 		return nil, err
 	}
-	requestURL := fmt.Sprintf("%s/%s", s.transport.client.BaseURL, resourcePath)
+	requestURL := fmt.Sprintf("%s/%s", s.baseURL, resourcePath)
 
-	var source Source
-	if err := s.transport.doJSON(ctx, "GET", requestURL, nil, &source); err != nil {
+	var source model.Source
+	if err := s.doer.DoJSON(ctx, "GET", requestURL, nil, &source); err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
 

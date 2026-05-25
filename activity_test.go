@@ -49,7 +49,7 @@ func (suite *ActivityTestSuite) TestListActivitiesWithPagination() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{
+	response, err := suite.client.Activities().List(context.Background(), "session-1", &ListActivitiesOptions{
 		PageSize:  5,
 		PageToken: "test-token",
 	})
@@ -85,7 +85,7 @@ func (suite *ActivityTestSuite) TestListActivitiesWithOptionsCreateTime() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{
+	response, err := suite.client.Activities().List(context.Background(), "session-1", &ListActivitiesOptions{
 		PageSize:   25,
 		CreateTime: testTime("2026-01-01T00:00:00Z"),
 	})
@@ -113,7 +113,7 @@ func (suite *ActivityTestSuite) TestListActivitiesWithOptionsFilter() {
 			return resp, nil
 		})
 
-	response, err := suite.client.Activities.List(context.Background(), "session-1", &ListActivitiesOptions{
+	response, err := suite.client.Activities().List(context.Background(), "session-1", &ListActivitiesOptions{
 		PageSize: 25,
 		Filter:   `create_time > "2024-09-04T10:00:00Z"`,
 	})
@@ -140,7 +140,7 @@ func (suite *ActivityTestSuite) TestListAllActivitiesPaginates() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.Activities.ListAll(context.Background(), "session-1", 2)
+	activities, err := suite.client.Activities().ListAll(context.Background(), "session-1", 2)
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), []Activity{{ID: "activity-1"}, {ID: "activity-2"}}, activities)
@@ -177,7 +177,7 @@ func (suite *ActivityTestSuite) TestListActivitiesFiltered() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", filter)
+	activities, err := suite.client.Activities().Filter(context.Background(), "session-1", filter)
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -211,7 +211,7 @@ func (suite *ActivityTestSuite) TestSearchActivities() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.Activities.Search(context.Background(), "session-1", options)
+	activities, err := suite.client.Activities().Search(context.Background(), "session-1", options)
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -239,7 +239,7 @@ func (suite *ActivityTestSuite) TestGetActivitiesByType() {
 			return resp, nil
 		})
 
-	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", &ActivityFilter{Type: "plan"})
+	activities, err := suite.client.Activities().Filter(context.Background(), "session-1", &ActivityFilter{Type: "plan"})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -266,7 +266,7 @@ func (suite *ActivityTestSuite) TestGetActivitiesWithPlans() {
 		})
 
 	hasPlan := true
-	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", &ActivityFilter{HasPlan: &hasPlan})
+	activities, err := suite.client.Activities().Filter(context.Background(), "session-1", &ActivityFilter{HasPlan: &hasPlan})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -294,7 +294,7 @@ func (suite *ActivityTestSuite) TestGetActivitiesWithArtifacts() {
 		})
 
 	hasArtifacts := true
-	activities, err := suite.client.Activities.Filter(context.Background(), "session-1", &ActivityFilter{HasArtifacts: &hasArtifacts})
+	activities, err := suite.client.Activities().Filter(context.Background(), "session-1", &ActivityFilter{HasArtifacts: &hasArtifacts})
 
 	require.NoError(suite.T(), err)
 	assert.Len(suite.T(), activities, 1)
@@ -335,7 +335,7 @@ func (suite *ActivityTestSuite) TestGetActivity() {
 			return resp, nil
 		})
 
-	activity, err := suite.client.Activities.Get(context.Background(), "session-1", "activity-1")
+	activity, err := suite.client.Activities().Get(context.Background(), "session-1", "activity-1")
 
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), "activity-1", activity.ID)

@@ -1,4 +1,4 @@
-package jules
+package transport
 
 import (
 	"bytes"
@@ -25,12 +25,14 @@ func TestClientLogging_DisabledByDefault(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client := NewClient("test-key", WithLogger(logger)) // Note: DebugLog is false by default
-	// Ensure the HTTP client uses httpmock
-	client.HTTPClient = &http.Client{}
+	client := New(Config{
+		APIKey:     "test-key",
+		HTTPClient: &http.Client{},
+		Logger:     logger,
+	}) // Note: DebugLog is false by default
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/123", nil)
-	_, err := client.transport.do(req)
+	_, err := client.do(req)
 	require.NoError(t, err)
 
 	assert.Empty(t, logBuf.String(), "Expected no logs to be written when debugLog is false")
@@ -46,11 +48,15 @@ func TestClientLogging_EnabledLogsRequestData(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client := NewClient("test-key", WithLogger(logger), WithDebugLog(true))
-	client.HTTPClient = &http.Client{}
+	client := New(Config{
+		APIKey:     "test-key",
+		HTTPClient: &http.Client{},
+		Logger:     logger,
+		DebugLog:   true,
+	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/123", nil)
-	_, err := client.transport.do(req)
+	_, err := client.do(req)
 	require.NoError(t, err)
 
 	logOutput := logBuf.String()
@@ -72,11 +78,15 @@ func TestClientLogging_RedactsSensitiveQueryParams(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client := NewClient("test-key", WithLogger(logger), WithDebugLog(true))
-	client.HTTPClient = &http.Client{}
+	client := New(Config{
+		APIKey:     "test-key",
+		HTTPClient: &http.Client{},
+		Logger:     logger,
+		DebugLog:   true,
+	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions?api_key=secret1&token=secret2&auth_token=secret3&credential=secret4&safe_param=hello", nil)
-	_, err := client.transport.do(req)
+	_, err := client.do(req)
 	require.NoError(t, err)
 
 	logOutput := logBuf.String()
@@ -109,15 +119,17 @@ func TestClientLogging_LogsRetriesAndErrors(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client := NewClient("test-key",
-		WithLogger(logger),
-		WithDebugLog(true),
-		WithRetryAttempts(2),
-		WithRetryBackoff(1*time.Millisecond))
-	client.HTTPClient = &http.Client{}
+	client := New(Config{
+		APIKey:        "test-key",
+		HTTPClient:    &http.Client{},
+		Logger:        logger,
+		DebugLog:      true,
+		RetryAttempts: 2,
+		RetryBackoff:  1 * time.Millisecond,
+	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/123", nil)
-	_, err := client.transport.do(req)
+	_, err := client.do(req)
 	require.NoError(t, err)
 
 	logOutput := logBuf.String()
@@ -139,18 +151,20 @@ func TestClientLogging_RedactsSensitiveErrorDetails(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client := NewClient("test-key",
-		WithHTTPClient(&http.Client{
+	client := New(Config{
+		APIKey: "test-key",
+		HTTPClient: &http.Client{
 			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return nil, errors.New(`Get "https://jules.googleapis.com/v1alpha/sessions?api_key=secret1&token=secret2": failed`)
 			}),
-		}),
-		WithLogger(logger),
-		WithDebugLog(true),
-		WithRetryAttempts(0))
+		},
+		Logger:        logger,
+		DebugLog:      true,
+		RetryAttempts: 0,
+	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions?api_key=secret1&token=secret2", nil)
-	_, err := client.transport.do(req)
+	_, err := client.do(req)
 	require.Error(t, err)
 
 	logOutput := logBuf.String()

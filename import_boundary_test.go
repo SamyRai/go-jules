@@ -13,7 +13,6 @@ func TestPackageHasNoAppImports(t *testing.T) {
 	}
 
 	forbidden := []string{
-		"/" + "internal" + "/",
 		"github.com/" + "sp" + "f13/cobra",
 		"github.com/" + "sp" + "f13/viper",
 		"github.com/" + "google/go" + "-github",
@@ -25,6 +24,9 @@ func TestPackageHasNoAppImports(t *testing.T) {
 
 	imports := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
 	for importPath := range imports {
+		if strings.HasPrefix(importPath, "github.com/SamyRai/go-jules/internal/") {
+			continue
+		}
 		for _, forbiddenImport := range forbidden {
 			if strings.Contains(importPath, forbiddenImport) {
 				t.Fatalf("go-jules imports forbidden dependency %q via %q", forbiddenImport, importPath)
