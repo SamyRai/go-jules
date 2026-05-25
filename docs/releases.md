@@ -11,9 +11,11 @@ Versioning follows Go module conventions:
   changes
 - tagged versions are immutable; fixes are published as new tags
 
-The next planned release is `v0.2.0`.
-
 ## Unreleased
+
+- No unreleased changes.
+
+## v0.2.0 - 2026-05-26
 
 - Introduce an opaque client facade with service accessors:
   `client.Sessions()`, `client.Sources()`, `client.Activities()`, and
@@ -30,6 +32,12 @@ The next planned release is `v0.2.0`.
 - Add archive/unarchive session support and discovery-based API coverage
   validation.
 - Harden retry, pagination, resource escaping, and option-default coverage.
+- Add scheduled API coverage validation in CI to catch Jules Discovery drift.
+- Harden session monitoring with immediate first polls, positive duration
+  validation, and explicit `WaitForPlan` activity-list errors.
+- Add artifact kind and metadata helpers that classify embedded artifacts
+  without decoding content or writing files.
+- Add read-only live smoke coverage gated by `JULES_API_KEY`.
 
 ## Release Process
 
@@ -49,6 +57,12 @@ go test -race ./...
 go vet ./...
 go run ./internal/cmd/jules-api-coverage
 GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+```
+
+Optionally run the read-only live smoke test with a maintainer API key:
+
+```bash
+JULES_API_KEY=... go test ./... -run TestLiveSmokeListEndpoints
 ```
 
 Tag and publish:

@@ -82,6 +82,20 @@ func ExampleArtifactContent() {
 	// exit code: 0
 }
 
+func ExampleArtifactMetadataOf() {
+	metadata := ArtifactMetadataOf(Artifact{
+		ChangeSet: &ChangeSet{
+			Source: "sources/github/owner/repo",
+			GitPatch: &GitPatch{
+				UnidiffPatch: "diff --git a/main.go b/main.go\n",
+			},
+		},
+	})
+
+	fmt.Println(metadata.Kind, metadata.ContentType, metadata.Source, metadata.HasContent)
+	// Output: changeSet text/x-diff; charset=utf-8 sources/github/owner/repo true
+}
+
 func exampleClient(handler http.Handler) (*Client, func()) {
 	server := httptest.NewServer(handler)
 	client := NewClient("test-api-key", WithBaseURL(server.URL), WithRetryAttempts(0))

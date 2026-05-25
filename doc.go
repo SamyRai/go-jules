@@ -20,8 +20,8 @@
 // [Client.Sessions] creates, lists, archives, deletes, and messages sessions.
 // [Client.Sources] lists and retrieves connected source repositories.
 // [Client.Activities] lists session activity records and provides client-side
-// filtering/search over documented activity payloads. [Client.Artifacts] reads
-// embedded artifact data from activities and sessions.
+// filtering/search over documented activity payloads. [Client.Artifacts]
+// classifies and reads embedded artifact data from activities and sessions.
 //
 // Source-backed session creation accepts either bare source IDs such as
 // "github/owner/repo" or full resource names such as "sources/github/owner/repo".
@@ -33,10 +33,11 @@
 // responses. Retry-After is honored for rate limits, and debug logging redacts
 // sensitive query parameters and authentication-like error fragments.
 //
-// [NewSessionMonitor] polls session state until completion, failure, user
-// action, context cancellation, or timeout. Monitoring is intentionally a client
-// helper only; the module does not include a CLI, config loader, patch applier,
-// GitHub client, artifact writer, or local filesystem orchestration.
+// [NewSessionMonitor] checks session state immediately, then polls until
+// completion, failure, user action, context cancellation, or timeout. Monitoring
+// is intentionally a client helper only; the module does not include a CLI,
+// config loader, patch applier, GitHub client, artifact writer, or local
+// filesystem orchestration.
 //
 // API coverage is checked against Google's Jules Discovery document by the
 // internal maintainer command:

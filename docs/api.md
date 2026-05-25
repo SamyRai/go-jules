@@ -143,10 +143,14 @@ for _, item := range items {
 - formatted command output for `bashOutput`
 - base64-decoded bytes for `media`
 
+Use `ArtifactKindOf`, `ArtifactMetadataOf`, or the matching methods on
+`client.Artifacts()` to classify artifacts without decoding content or writing
+files.
+
 ## Monitoring
 
-`SessionMonitor` polls the session until completion, failure, required user
-action, context cancellation, or timeout:
+`SessionMonitor` checks the session immediately, then polls until completion,
+failure, required user action, context cancellation, or timeout:
 
 ```go
 status, err := jules.NewSessionMonitor(client, session.ID).
@@ -155,8 +159,10 @@ status, err := jules.NewSessionMonitor(client, session.ID).
 	WaitForCompletion(ctx)
 ```
 
-`WaitForCompletion` and `PollUntilComplete` currently use continuous polling.
-`WaitForPlan` polls activities until a `planGenerated` payload appears.
+`WithInterval` and `WithMaxWait` must be positive durations. `WaitForCompletion`
+and `PollUntilComplete` use continuous polling. `WaitForPlan` polls activities
+until a `planGenerated` payload appears and returns activity-list errors instead
+of hiding them until timeout.
 
 ## Errors and Retries
 

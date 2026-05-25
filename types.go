@@ -51,6 +51,8 @@ type (
 	ActivityFilter        = services.ActivityFilter
 	ActivitySearchOptions = services.ActivitySearchOptions
 	ActivityArtifact      = services.ActivityArtifact
+	ArtifactKind          = services.ArtifactKind
+	ArtifactMetadata      = services.ArtifactMetadata
 	SessionStatus         = services.SessionStatus
 
 	SessionsService   = services.SessionsService
@@ -77,4 +79,9 @@ const (
 	ActivityOriginatorSystem = model.ActivityOriginatorSystem
 	ActivityOriginatorAgent  = model.ActivityOriginatorAgent
 	ActivityOriginatorUser   = model.ActivityOriginatorUser
+
+	ArtifactKindUnknown    = services.ArtifactKindUnknown
+	ArtifactKindBashOutput = services.ArtifactKindBashOutput
+	ArtifactKindChangeSet  = services.ArtifactKindChangeSet
+	ArtifactKindMedia      = services.ArtifactKindMedia
 )

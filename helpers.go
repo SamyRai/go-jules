@@ -32,6 +32,17 @@ func ArtifactContent(artifact Artifact) ([]byte, error) {
 	return services.ArtifactContent(artifact)
 }
 
+// ArtifactKindOf returns the documented payload kind carried by an artifact.
+func ArtifactKindOf(artifact Artifact) ArtifactKind {
+	return services.ArtifactKindOf(artifact)
+}
+
+// ArtifactMetadataOf returns documented artifact metadata without decoding or
+// writing artifact content.
+func ArtifactMetadataOf(artifact Artifact) ArtifactMetadata {
+	return services.ArtifactMetadataOf(artifact)
+}
+
 // NewSessionMonitor creates a new session monitor.
 func NewSessionMonitor(client *Client, sessionID string) *SessionMonitor {
 	return services.NewSessionMonitor(client.Sessions(), client.Activities(), sessionID)

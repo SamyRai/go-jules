@@ -75,6 +75,26 @@ func TestContractFixtures(t *testing.T) {
 		mediaContent, err := ArtifactContent(activity.Artifacts[2])
 		require.NoError(t, err)
 		assert.Equal(t, []byte("hello"), mediaContent)
+
+		assert.Equal(t, ArtifactKindChangeSet, ArtifactKindOf(activity.Artifacts[0]))
+		assert.Equal(t, ArtifactKindBashOutput, ArtifactKindOf(activity.Artifacts[1]))
+		assert.Equal(t, ArtifactKindMedia, ArtifactKindOf(activity.Artifacts[2]))
+
+		patchMetadata := ArtifactMetadataOf(activity.Artifacts[0])
+		assert.Equal(t, ArtifactKindChangeSet, patchMetadata.Kind)
+		assert.Equal(t, "text/x-diff; charset=utf-8", patchMetadata.ContentType)
+		assert.Equal(t, "sources/github/myorg/myrepo", patchMetadata.Source)
+		assert.True(t, patchMetadata.HasContent)
+
+		bashMetadata := ArtifactMetadataOf(activity.Artifacts[1])
+		assert.Equal(t, ArtifactKindBashOutput, bashMetadata.Kind)
+		assert.Equal(t, "go test ./...", bashMetadata.Command)
+		assert.True(t, bashMetadata.HasContent)
+
+		mediaMetadata := ArtifactMetadataOf(activity.Artifacts[2])
+		assert.Equal(t, ArtifactKindMedia, mediaMetadata.Kind)
+		assert.Equal(t, "image/png", mediaMetadata.ContentType)
+		assert.True(t, mediaMetadata.HasContent)
 	})
 }
 

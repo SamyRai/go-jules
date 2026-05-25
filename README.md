@@ -133,11 +133,14 @@ for _, item := range artifacts {
 
 `ArtifactContent` returns git patch bytes for `changeSet.gitPatch`, formatted
 command output for `bashOutput`, and decoded bytes for base64 `media`.
+`ArtifactKindOf` and `ArtifactMetadataOf` classify artifacts without decoding
+or writing their content.
 
 ## Monitoring
 
-`SessionMonitor` polls until the session completes, fails, needs user action, is
-cancelled by context, or reaches the configured timeout.
+`SessionMonitor` checks the current session immediately, then polls until the
+session completes, fails, needs user action, is cancelled by context, or reaches
+the configured timeout. Intervals and max waits must be positive durations.
 
 ```go
 status, err := jules.NewSessionMonitor(client, session.ID).
@@ -202,14 +205,17 @@ The module is pre-1.0, but current consumers are treated as real. Breaking
 changes should be explicit in release notes and reserved for API corrections or
 architecture changes that materially improve maintainability.
 
+The supported public import path is `github.com/SamyRai/go-jules`. Applications
+should not import internal packages. API key loading, credential storage,
+artifact writing, patch application, and repository orchestration are caller
+responsibilities.
+
 Versioning follows Go module conventions:
 
 - patch releases fix bugs without public API changes
 - minor releases may add API surface or carry documented pre-1.0 breaking
   changes
 - tagged versions are immutable; fixes are published as new tags
-
-The next planned release is `v0.2.0`.
 
 See [release notes and process](docs/releases.md) for unreleased changes and
 the release checklist. See [development guide](docs/development.md) for local

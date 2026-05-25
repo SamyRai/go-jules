@@ -45,11 +45,29 @@ func (suite *MonitorTestSuite) TestWithInterval() {
 	assert.Same(suite.T(), suite.monitor, monitor)
 }
 
+func (suite *MonitorTestSuite) TestWaitForCompletionRejectsInvalidInterval() {
+	suite.monitor.WithInterval(0)
+
+	_, err := suite.monitor.WaitForCompletion(context.Background())
+
+	require.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "monitor interval must be positive")
+}
+
 // TestWithMaxWait tests setting custom max wait
 func (suite *MonitorTestSuite) TestWithMaxWait() {
 	monitor := suite.monitor.WithMaxWait(1 * time.Hour)
 
 	assert.Same(suite.T(), suite.monitor, monitor)
+}
+
+func (suite *MonitorTestSuite) TestWaitForCompletionRejectsInvalidMaxWait() {
+	suite.monitor.WithMaxWait(-time.Second)
+
+	_, err := suite.monitor.WaitForCompletion(context.Background())
+
+	require.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "monitor max wait must be positive")
 }
 
 // TestOnProgress tests setting progress callback
@@ -177,6 +195,27 @@ func (suite *MonitorTestSuite) TestWaitForCompletion() {
 	assert.GreaterOrEqual(suite.T(), callCount, 3)
 }
 
+func (suite *MonitorTestSuite) TestWaitForCompletionPollsImmediately() {
+	callCount := 0
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/test-session-1",
+		func(req *http.Request) (*http.Response, error) {
+			callCount++
+			resp, _ := httpmock.NewJsonResponse(200, Session{
+				ID:    "test-session-1",
+				State: SessionStateCompleted,
+			})
+			return resp, nil
+		})
+
+	suite.monitor.WithInterval(time.Hour).WithMaxWait(time.Second)
+
+	status, err := suite.monitor.WaitForCompletion(context.Background())
+
+	require.NoError(suite.T(), err)
+	assert.Equal(suite.T(), SessionStateCompleted, status.State)
+	assert.Equal(suite.T(), 1, callCount)
+}
+
 func (suite *MonitorTestSuite) TestWaitForCompletionStopsForUserAction() {
 	callCount := 0
 	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/test-session-1",
@@ -241,6 +280,28 @@ func (suite *MonitorTestSuite) TestWaitForPlan() {
 	require.NoError(suite.T(), err)
 	assert.Equal(suite.T(), SessionStatePlanning, status.State)
 	assert.GreaterOrEqual(suite.T(), callCount, 2)
+}
+
+func (suite *MonitorTestSuite) TestWaitForPlanReturnsActivityListError() {
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/test-session-1",
+		func(req *http.Request) (*http.Response, error) {
+			resp, _ := httpmock.NewJsonResponse(200, Session{
+				ID:    "test-session-1",
+				State: SessionStatePlanning,
+			})
+			return resp, nil
+		})
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/test-session-1/activities?pageSize=10",
+		func(req *http.Request) (*http.Response, error) {
+			return httpmock.NewStringResponse(http.StatusInternalServerError, "activities unavailable"), nil
+		})
+
+	suite.monitor.WithInterval(10 * time.Millisecond).WithMaxWait(time.Second)
+
+	_, err := suite.monitor.WaitForPlan(context.Background())
+
+	require.Error(suite.T(), err)
+	assert.Contains(suite.T(), err.Error(), "failed to list activities while waiting for plan")
 }
 
 // TestPollUntilCompleteTimeout tests timeout behavior

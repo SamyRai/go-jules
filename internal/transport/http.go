@@ -104,6 +104,9 @@ func (t *Transport) DoJSON(ctx context.Context, method, url string, body any, re
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 

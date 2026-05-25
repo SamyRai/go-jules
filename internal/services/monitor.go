@@ -31,6 +31,9 @@ type SessionMonitor struct {
 	onComplete func(*SessionStatus)
 }
 
+const defaultMonitorInterval = 5 * time.Second
+const defaultMonitorMaxWait = 30 * time.Minute
+
 type SessionGetter interface {
 	Get(ctx context.Context, sessionID string) (*model.Session, error)
 }
@@ -45,8 +48,8 @@ func NewSessionMonitor(sessions SessionGetter, activities ActivityLister, sessio
 		sessions:   sessions,
 		activities: activities,
 		sessionID:  sessionID,
-		interval:   5 * time.Second,  // Check every 5 seconds
-		maxWait:    30 * time.Minute, // Wait up to 30 minutes
+		interval:   defaultMonitorInterval,
+		maxWait:    defaultMonitorMaxWait,
 	}
 }
 
@@ -86,43 +89,60 @@ func (sm *SessionMonitor) PollUntilComplete(ctx context.Context) (*SessionStatus
 
 // pollUntilComplete implements the polling logic
 func (sm *SessionMonitor) pollUntilComplete(ctx context.Context, continuous bool) (*SessionStatus, error) {
-	ticker := time.NewTicker(sm.interval)
-	defer ticker.Stop()
+	if err := sm.validate(); err != nil {
+		return nil, err
+	}
 	timeout := time.NewTimer(sm.maxWait)
 	defer timeout.Stop()
 
 	for {
+		status, err := sm.getSessionStatus(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get session status: %w", err)
+		}
+
+		if sm.onProgress != nil {
+			sm.onProgress(status)
+		}
+
+		if status.IsDone || status.NeedsUserAction {
+			if sm.onComplete != nil {
+				sm.onComplete(status)
+			}
+			return status, nil
+		}
+
+		if !continuous {
+			return status, nil
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
 		case <-timeout.C:
 			return nil, fmt.Errorf("timeout waiting for session completion after %v", sm.maxWait)
-		case <-ticker.C:
-			status, err := sm.getSessionStatus(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get session status: %w", err)
-			}
-
-			// Call progress callback if set
-			if sm.onProgress != nil {
-				sm.onProgress(status)
-			}
-
-			// Stop when the agent is done or when the user must act.
-			if status.IsDone || status.NeedsUserAction {
-				// Call completion callback if set
-				if sm.onComplete != nil {
-					sm.onComplete(status)
-				}
-				return status, nil
-			}
-
-			// If not continuous polling, just return current status
-			if !continuous {
-				return status, nil
-			}
+		case <-time.After(sm.interval):
 		}
 	}
+}
+
+func (sm *SessionMonitor) validate() error {
+	if sm == nil {
+		return fmt.Errorf("session monitor cannot be nil")
+	}
+	if sm.sessions == nil {
+		return fmt.Errorf("session service is required")
+	}
+	if sm.sessionID == "" {
+		return fmt.Errorf("session ID is required")
+	}
+	if sm.interval <= 0 {
+		return fmt.Errorf("monitor interval must be positive")
+	}
+	if sm.maxWait <= 0 {
+		return fmt.Errorf("monitor max wait must be positive")
+	}
+	return nil
 }
 
 // getSessionStatus retrieves the current session status
@@ -161,45 +181,52 @@ func (sm *SessionMonitor) getSessionStatus(ctx context.Context) (*SessionStatus,
 
 // WaitForPlan waits for a session to generate a plan
 func (sm *SessionMonitor) WaitForPlan(ctx context.Context) (*SessionStatus, error) {
-	return sm.pollUntilCondition(ctx, func(status *SessionStatus) bool {
-		// Get latest activities to check for plan generation
+	return sm.pollUntilCondition(ctx, func(status *SessionStatus) (bool, error) {
 		response, err := sm.activities.List(ctx, sm.sessionID, &ListActivitiesOptions{PageSize: 10})
 		if err != nil {
-			return false
+			return false, fmt.Errorf("failed to list activities while waiting for plan: %w", err)
 		}
 
-		// Check if any activity has a plan generated
 		for _, activity := range response.Activities {
 			if activity.PlanGenerated != nil {
-				return true
+				return true, nil
 			}
 		}
-		return false
+		return false, nil
 	})
 }
 
 // pollUntilCondition polls until a custom condition is met
-func (sm *SessionMonitor) pollUntilCondition(ctx context.Context, condition func(*SessionStatus) bool) (*SessionStatus, error) {
-	ticker := time.NewTicker(sm.interval)
-	defer ticker.Stop()
+func (sm *SessionMonitor) pollUntilCondition(ctx context.Context, condition func(*SessionStatus) (bool, error)) (*SessionStatus, error) {
+	if err := sm.validate(); err != nil {
+		return nil, err
+	}
+	if sm.activities == nil {
+		return nil, fmt.Errorf("activity service is required")
+	}
 	timeout := time.NewTimer(sm.maxWait)
 	defer timeout.Stop()
 
 	for {
+		status, err := sm.getSessionStatus(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		matched, err := condition(status)
+		if err != nil {
+			return nil, err
+		}
+		if matched {
+			return status, nil
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
 		case <-timeout.C:
 			return nil, fmt.Errorf("timeout waiting for condition after %v", sm.maxWait)
-		case <-ticker.C:
-			status, err := sm.getSessionStatus(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			if condition(status) {
-				return status, nil
-			}
+		case <-time.After(sm.interval):
 		}
 	}
 }

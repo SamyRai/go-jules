@@ -40,6 +40,16 @@ GOTOOLCHAIN=go1.26.3 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 `go mod tidy` should leave `go.mod` and `go.sum` unchanged. If formatting output
 is non-empty, run `gofmt -s -w` on the listed files before retesting.
 
+Live smoke tests are opt-in and read-only. To run them, set `JULES_API_KEY` and
+run:
+
+```bash
+JULES_API_KEY=... go test ./... -run TestLiveSmokeListEndpoints
+```
+
+The smoke test lists one source page and one session page. It does not create,
+delete, archive, approve, message, write artifacts, or apply patches.
+
 ## API Coverage
 
 The API coverage command fetches the Jules v1alpha Discovery document from:
@@ -61,9 +71,10 @@ as covered unless the corresponding public service method or DTO exists.
 
 ## CI
 
-The CI workflow runs on pushes and pull requests to `main`. It checks
-formatting, module tidiness, tests, race tests, vet, API coverage on Go 1.26.x,
-and govulncheck on Go 1.26.3.
+The CI workflow runs on pushes and pull requests to `main`, manual dispatch, and
+a weekly schedule that catches Jules API drift even when repository code has not
+changed. It checks formatting, module tidiness, tests, race tests, vet, API
+coverage on Go 1.26.x, and govulncheck on Go 1.26.3.
 
 The release workflow runs on semver tags and manual dispatch. It repeats the
 release verification suite, validates the module path, creates a GitHub release

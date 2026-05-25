@@ -4,10 +4,32 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"mime"
 	"strings"
 
 	"github.com/SamyRai/go-jules/internal/model"
 )
+
+// ArtifactKind identifies the documented payload carried by an artifact.
+type ArtifactKind string
+
+const (
+	ArtifactKindUnknown    ArtifactKind = ""
+	ArtifactKindBashOutput ArtifactKind = "bashOutput"
+	ArtifactKindChangeSet  ArtifactKind = "changeSet"
+	ArtifactKindMedia      ArtifactKind = "media"
+)
+
+// ArtifactMetadata summarizes the documented metadata available without
+// decoding or writing artifact content.
+type ArtifactMetadata struct {
+	Kind        ArtifactKind
+	ContentType string
+	Source      string
+	Command     string
+	ExitCode    int
+	HasContent  bool
+}
 
 // ActivityArtifact represents an artifact with its activity context.
 type ActivityArtifact struct {
@@ -69,9 +91,60 @@ func (a *ArtifactsService) Content(artifact model.Artifact) ([]byte, error) {
 	return artifactContent(artifact)
 }
 
+// Kind returns the documented artifact payload kind.
+func (a *ArtifactsService) Kind(artifact model.Artifact) ArtifactKind {
+	return ArtifactKindOf(artifact)
+}
+
+// Metadata returns documented artifact metadata without decoding or writing
+// artifact content.
+func (a *ArtifactsService) Metadata(artifact model.Artifact) ArtifactMetadata {
+	return ArtifactMetadataOf(artifact)
+}
+
 // ArtifactContent returns the documented embedded content for an artifact.
 func ArtifactContent(artifact model.Artifact) ([]byte, error) {
 	return artifactContent(artifact)
+}
+
+// ArtifactKindOf returns the documented payload kind carried by an artifact.
+func ArtifactKindOf(artifact model.Artifact) ArtifactKind {
+	switch {
+	case artifact.BashOutput != nil:
+		return ArtifactKindBashOutput
+	case artifact.ChangeSet != nil:
+		return ArtifactKindChangeSet
+	case artifact.Media != nil:
+		return ArtifactKindMedia
+	default:
+		return ArtifactKindUnknown
+	}
+}
+
+// ArtifactMetadataOf returns documented artifact metadata without decoding or
+// writing artifact content.
+func ArtifactMetadataOf(artifact model.Artifact) ArtifactMetadata {
+	metadata := ArtifactMetadata{Kind: ArtifactKindOf(artifact)}
+	switch {
+	case artifact.BashOutput != nil:
+		metadata.ContentType = "text/plain; charset=utf-8"
+		metadata.Command = artifact.BashOutput.Command
+		metadata.ExitCode = artifact.BashOutput.ExitCode
+		metadata.HasContent = artifact.BashOutput.Command != "" || artifact.BashOutput.Output != ""
+	case artifact.ChangeSet != nil:
+		metadata.ContentType = "text/x-diff; charset=utf-8"
+		metadata.Source = artifact.ChangeSet.Source
+		metadata.HasContent = artifact.ChangeSet.GitPatch != nil && artifact.ChangeSet.GitPatch.UnidiffPatch != ""
+	case artifact.Media != nil:
+		metadata.ContentType = artifact.Media.MimeType
+		if metadata.ContentType != "" {
+			if parsed, _, err := mime.ParseMediaType(metadata.ContentType); err == nil {
+				metadata.ContentType = parsed
+			}
+		}
+		metadata.HasContent = artifact.Media.Data != ""
+	}
+	return metadata
 }
 
 func artifactContent(artifact model.Artifact) ([]byte, error) {

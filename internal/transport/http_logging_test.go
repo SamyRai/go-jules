@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -172,6 +173,135 @@ func TestClientLogging_RedactsSensitiveErrorDetails(t *testing.T) {
 	assert.NotContains(t, logOutput, "secret2")
 	assert.Contains(t, logOutput, "api_key=REDACTED")
 	assert.Contains(t, logOutput, "token=REDACTED")
+}
+
+func TestDoJSON_AllowsEmptySuccessfulResponseWithResult(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/empty",
+		httpmock.NewStringResponder(http.StatusOK, ""))
+
+	client := New(Config{
+		APIKey:        "test-key",
+		HTTPClient:    &http.Client{},
+		RetryAttempts: 0,
+	})
+
+	var result struct {
+		ID string `json:"id"`
+	}
+	err := client.DoJSON(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/empty", nil, &result)
+
+	require.NoError(t, err)
+	assert.Empty(t, result.ID)
+}
+
+func TestDo_DoesNotRetryNonRateLimitedClientErrors(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	callCount := 0
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/forbidden",
+		func(req *http.Request) (*http.Response, error) {
+			callCount++
+			return httpmock.NewStringResponse(http.StatusForbidden, "permission denied"), nil
+		})
+
+	client := New(Config{
+		APIKey:        "test-key",
+		HTTPClient:    &http.Client{},
+		RetryAttempts: 3,
+		RetryBackoff:  time.Millisecond,
+	})
+
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/forbidden", nil)
+	_, err := client.do(req)
+
+	require.Error(t, err)
+	assert.Equal(t, 1, callCount)
+}
+
+func TestDo_HonorsRetryAfterHTTPDate(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	var slept []time.Duration
+	callCount := 0
+	retryAt := time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)
+	httpmock.RegisterResponder("GET", "https://jules.googleapis.com/v1alpha/sessions/rate-limited",
+		func(req *http.Request) (*http.Response, error) {
+			callCount++
+			if callCount == 1 {
+				resp := httpmock.NewStringResponse(http.StatusTooManyRequests, "rate limited")
+				resp.Header.Set("Retry-After", retryAt)
+				return resp, nil
+			}
+			return httpmock.NewStringResponse(http.StatusOK, `{}`), nil
+		})
+
+	client := New(Config{
+		APIKey:        "test-key",
+		HTTPClient:    &http.Client{},
+		RetryAttempts: 1,
+		RetryBackoff:  time.Millisecond,
+		Sleep: func(d time.Duration) error {
+			slept = append(slept, d)
+			return nil
+		},
+	})
+
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://jules.googleapis.com/v1alpha/sessions/rate-limited", nil)
+	resp, err := client.do(req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 2, callCount)
+	require.Len(t, slept, 1)
+	assert.Greater(t, slept[0], 59*time.Minute)
+	assert.LessOrEqual(t, slept[0], time.Hour)
+}
+
+func TestDo_ReturnsContextErrorWhenCancelledDuringRetrySleep(t *testing.T) {
+	sleepStarted := make(chan struct{})
+	sleepRelease := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := New(Config{
+		APIKey: "test-key",
+		HTTPClient: &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       io.NopCloser(strings.NewReader("try again")),
+					Header:     make(http.Header),
+				}, nil
+			}),
+		},
+		RetryAttempts: 1,
+		RetryBackoff:  time.Hour,
+		Sleep: func(time.Duration) error {
+			close(sleepStarted)
+			<-sleepRelease
+			return nil
+		},
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		req, _ := http.NewRequestWithContext(ctx, "GET", "https://jules.googleapis.com/v1alpha/sessions/retry", nil)
+		_, err := client.do(req)
+		errCh <- err
+	}()
+
+	<-sleepStarted
+	cancel()
+	err := <-errCh
+	close(sleepRelease)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
